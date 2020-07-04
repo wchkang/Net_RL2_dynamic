@@ -22,6 +22,7 @@ parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES'
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--dataset_path', default="./data/", help='A path to dataset directory')
 parser.add_argument('--model', default="ResNet34_SingleShared", help='ResNet18, ResNet34, ResNet34_SingleShared, ResNet34_NonShared, ResNet34_SharedOnly, DenseNet121, DenseNet121_SingleShared, ResNext50, ResNext50_SingleShared')
+parser.add_argument('--scale', default=False, action='store_true', help='Execute a scaled-down model')
 args = parser.parse_args()
 
 from models.cifar100 import resnet, densenet, resnext
@@ -58,7 +59,7 @@ def evaluation():
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = net(inputs, skip=args.scale)
             
             _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
