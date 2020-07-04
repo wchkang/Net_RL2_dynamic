@@ -12,6 +12,8 @@ import argparse
 
 import utils
 import timeit
+from random import randint
+
 
 #Possible arguments
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
@@ -97,7 +99,7 @@ def train(epoch):
 # Training for parameter shraed models
 # Use the property of orthogonal matrices;
 # e.g.: AxA.T = I if A is orthogonal 
-def train_basis(epoch):
+def train_basis(epoch, skip=False):
     print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
     net.train()
     
@@ -109,7 +111,7 @@ def train_basis(epoch):
         inputs, targets = inputs.to(device), targets.to(device)
     
         optimizer.zero_grad()
-        outputs = net(inputs)
+        outputs = net(inputs, skip)
 
         _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
@@ -161,11 +163,15 @@ def train_basis(epoch):
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
     
-    print("Training_Acc_Top1 = %.3f" % acc_top1)
-    print("Training_Acc_Top5 = %.3f" % acc_top5)
+    if (skip==False):
+        print("Training_Acc_Top1 = %.3f" % acc_top1)
+        print("Training_Acc_Top5 = %.3f" % acc_top5)
+    else:
+        print("[Skip] Training_Acc_top1 = %.3f" % acc_top1)
+        print("[Skip] Training_Acc_top5 = %.3f" % acc_top5)
                                 
 #Test for models
-def test(epoch):
+def test(epoch, skip=False):
     global best_acc
     global best_acc_top5
     net.eval()
@@ -176,7 +182,7 @@ def test(epoch):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = net(inputs, skip)
             
             _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
@@ -191,6 +197,7 @@ def test(epoch):
     # Save checkpoint.
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
+
     if acc_top1 > best_acc:
         #print('Saving..')
         state = {
@@ -232,9 +239,14 @@ if args.pretrained != None:
     best_acc = checkpoint['acc']
                                 
 for i in range(args.starting_epoch, 150):
+    if (randint(0,1) == 0):
+        skip = True
+    else:
+        skip = False
+    print('skip::', skip)
     start = timeit.default_timer()
-    func_train(i+1)
-    test(i+1)
+    func_train(i+1, skip)
+    test(i+1, skip)
     
     stop = timeit.default_timer()
     print('Time: ', stop - start)  
@@ -247,9 +259,13 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    if (randint(0,1) == 0):
+        skip = True
+    else:
+        skip = False
     start = timeit.default_timer()
-    func_train(i+151)
-    test(i+151)
+    func_train(i+151, skip)
+    test(i+151, skip)
     
     stop = timeit.default_timer()
     print('Time: ', stop - start)  
@@ -262,9 +278,13 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    if (randint(0,1) == 0):
+        skip = True
+    else:
+        skip = False
     start = timeit.default_timer()
-    func_train(i+226)
-    test(i+226)
+    func_train(i+226, skip)
+    test(i+226, skip)
     
     stop = timeit.default_timer()
     print('Time: ', stop - start)  
