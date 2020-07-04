@@ -1,6 +1,6 @@
-# Learning Shared Filter Bases for Efficient ConvNets
+# Embeddeding Multiple Deep Neural Networks for Adaptive Inference
 
-Official implementation of **Learning Shared Filter Bases for Efficient ConvNets**, a NeurIPS-2020 submission.
+This work is an extension of [**Learning Shared Filter Bases for Efficient ConvNets**](https://github.com/ssregibility/Net_RL2). 
 -  Unlike normal convolution in (a), our method in (b) replaces the original layer (given by *W*) by two layers (given by filter basis *W<sub>basis</sub>* and coefficients α). While most components of *W<sub>basis</sub>* are shared across many convolution layers, some are not shared and unique to each layer, allowing layer-specific peculiarity and more representation power of the network. 
 - In overparameterized networks, our method outperforms much deeper counterpart original networks while reducing parameters and computational costs substantially.
 ![Image](images/conv_decomp.jpg?raw=true)
