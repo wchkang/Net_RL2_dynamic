@@ -27,6 +27,7 @@ parser.add_argument('--pretrained', default=None, help='Path of a pretrained mod
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
 parser.add_argument('--dataset_path', default="/media/data/ILSVRC2012/", help='A path to dataset directory')
 parser.add_argument('--model', default="ResNet34_DoubleShared", help='ResNet18, ResNet34, ResNet34_DoubleShared, ResNet34_SingleShared')
+
 args = parser.parse_args()
 
 from models.ilsvrc import resnet
