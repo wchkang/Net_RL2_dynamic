@@ -2,7 +2,7 @@
 
 This work is an extension of [**Learning Shared Filter Bases for Efficient ConvNets**](https://github.com/ssregibility/Net_RL2). 
 - In our previous work, we explored the parameters sharing among convolution layers in a single DCNN. 
-- In this work, we explore the parameter sharing among mutltiple networks that have different representation captability and computing costs. 
+- In this work, we explore the parameter sharing among mutltiple networks embedded in a single model. 
 - Networks with different computing costs and accuracy can be chosen at runtime according to changing demands. 
 
 ## Requirements
