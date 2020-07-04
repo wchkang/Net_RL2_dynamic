@@ -298,6 +298,17 @@ class ResNet_SharedOnly(nn.Module):
      
         return x
     
+
+class SkippableSequential(nn.Sequential):
+    def forward(self, input, skip=False):
+        if skip == True:
+            n_modules = int(len(self)/2)
+        else:
+            n_modules = len(self)
+        for i in range(n_modules):
+            input = self[i](input)
+        return input
+
 # Proposed ResNet sharing a single basis for each residual block group
 class ResNet_SingleShared(nn.Module):
     def __init__(self, block_basis, block_original, num_blocks, shared_rank, unique_rank, num_classes=100):
@@ -345,17 +356,17 @@ class ResNet_SingleShared(nn.Module):
         for _ in range(1, blocks):
             layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis))
 
-        return nn.Sequential(*layers)
+        return SkippableSequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, skip=False):
         x = self.conv1(x)
         x = self.bn1(x)
         x = F.relu(x, inplace=True)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer1(x, skip)
+        x = self.layer2(x, skip)
+        x = self.layer3(x, skip)
+        x = self.layer4(x, skip)
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
