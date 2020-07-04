@@ -1,9 +1,9 @@
 # Embeddeding Multiple Deep Neural Networks for Adaptive Inference
 
 This work is an extension of [**Learning Shared Filter Bases for Efficient ConvNets**](https://github.com/ssregibility/Net_RL2). 
--  Unlike normal convolution in (a), our method in (b) replaces the original layer (given by *W*) by two layers (given by filter basis *W<sub>basis</sub>* and coefficients α). While most components of *W<sub>basis</sub>* are shared across many convolution layers, some are not shared and unique to each layer, allowing layer-specific peculiarity and more representation power of the network. 
-- In overparameterized networks, our method outperforms much deeper counterpart original networks while reducing parameters and computational costs substantially.
-![Image](images/conv_decomp.jpg?raw=true)
+- In our previous work, we explored the parameters sharing among convolution layers in a single DCNN. 
+- In this work, we explore the parameter sharing among mutltiple networks that have different representation captability and computing costs. 
+- Networks with different computing costs and accuracy can be chosen at runtime according to changing demands. 
 
 ## Requirements
 
@@ -62,11 +62,7 @@ Notes
 
 
 ## Results
-Testing errors vs. the number of parameters and FLOPs on CIFAR-100. The number of shared basis components (s), and non-shared basis components (u) are varied. Using more shared basis components results in better performance. In contrast, using more non-shared components does not always improve performance.
-![Image](images/graph.png?raw=true)
-
-
-Our model achieves the following performance on :
+Not available yet.
 
 ### CIFAR-100 Classifcation
 
@@ -97,10 +93,3 @@ Our model achieves the following performance on :
 | ResNet34-S48U1     |     27.88%         |      9.29%       |      9.44M     |  6.52G  | [Download](https://drive.google.com/file/d/1NHBvlYrTJzuJuKJjIdtlt5krDiXkue2r/view?usp=sharing) |
 | ResNet34-S32U1\*    |     27.69%         |      9.11%       |      9.76M     |  4.98G  | [Download](https://drive.google.com/file/d/1dtq8TaF88ELnIn4fQr4-eyMGwYCiGYVA/view?usp=sharing) |
 
-Notes
-- ResNet*XX*-S*s*U*u* denotes our model based on original ResNet*XX* with *s* rank of shared filter basis and *u* rank of unique filter basis. Use ```--shared_rank=s``` and ```--unique_rank=u``` for evaluating pretrained models.
-- \* denotes having 2 shared bases in each residual block group. Use ```--model=ResNetXX-DoubleShared``` for evaluating these models. Otherwise use ```--model=ResNetXX-SingleShared```.
-
-## Contributing
-
-There is no way to contribute to the code yet - however, this is subject to be changed.
