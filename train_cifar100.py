@@ -249,7 +249,7 @@ for i in range(args.starting_epoch, 150):
     
     stop = timeit.default_timer()
     print('skip:', skip)
-    print('Time: {.3f}'.format((stop - start))  
+    print('Time: {.3f}'.format(stop - start))  
 
     #============
     
@@ -269,7 +269,7 @@ for i in range(args.starting_epoch, 75):
     
     stop = timeit.default_timer()
     print('skip:', skip)
-    print('Time: {.3f}'.format((stop - start))  
+    print('Time: {.3f}'.format(stop - start))  
     
     #============
     
@@ -289,7 +289,7 @@ for i in range(args.starting_epoch, 75):
     
     stop = timeit.default_timer()
     print('skip:', skip)
-    print('Time: {.3f}'.format((stop - start))  
+    print('Time: {.3f}'.format(stop - start))  
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
