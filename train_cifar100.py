@@ -239,17 +239,17 @@ if args.pretrained != None:
     best_acc = checkpoint['acc']
                                 
 for i in range(args.starting_epoch, 150):
-    if (randint(0,1) == 0):
+    if (randint(0,2) == 0):
         skip = True
     else:
         skip = False
-    print('skip::', skip)
     start = timeit.default_timer()
     func_train(i+1, skip)
     test(i+1, skip)
     
     stop = timeit.default_timer()
-    print('Time: ', stop - start)  
+    print('skip:', skip)
+    print('Time: {.3f}'.format((stop - start))  
 
     #============
     
@@ -259,7 +259,7 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
-    if (randint(0,1) == 0):
+    if (randint(0,2) == 0):
         skip = True
     else:
         skip = False
@@ -268,7 +268,8 @@ for i in range(args.starting_epoch, 75):
     test(i+151, skip)
     
     stop = timeit.default_timer()
-    print('Time: ', stop - start)  
+    print('skip:', skip)
+    print('Time: {.3f}'.format((stop - start))  
     
     #============
     
@@ -278,7 +279,7 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
-    if (randint(0,1) == 0):
+    if (randint(0,2) == 0):
         skip = True
     else:
         skip = False
@@ -287,7 +288,8 @@ for i in range(args.starting_epoch, 75):
     test(i+226, skip)
     
     stop = timeit.default_timer()
-    print('Time: ', stop - start)  
+    print('skip:', skip)
+    print('Time: {.3f}'.format((stop - start))  
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
