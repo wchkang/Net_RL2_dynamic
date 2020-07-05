@@ -331,7 +331,10 @@ class ResNet_SingleShared(nn.Module):
         self.layer4 = self._make_layer(block_basis, block_original, 512, num_blocks[3], unique_rank*8, self.shared_basis_4, stride=2)
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # fc layer for the original model
         self.fc = nn.Linear(512, num_classes)
+        # fc layer for the scaled-down model
+        self.fc_scale = nn.Linear(512, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -370,7 +373,10 @@ class ResNet_SingleShared(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.fc(x)
+        if skip == True:
+            x = self.fc_scale(x)
+        else:
+            x = self.fc(x)
      
         return x
 
