@@ -244,7 +244,7 @@ def adjust_learning_rate_finetune(optimizer, epoch, args_lr):
 best_acc = 0
 best_acc_top5 = 0
 
-#optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 func_train = train
 if 'SingleShared' in args.model or 'SharedOnly' in args.model:
@@ -291,6 +291,13 @@ for param in net.fc.parameters():
     param.requires_grad = True
 
 print('\n######### Finetuning High-Performance Model ###########\n')
+  
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'])
+best_acc = checkpoint['acc']
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
 for i in range(args.starting_epoch, 150):
     skip = False
     start = timeit.default_timer()
