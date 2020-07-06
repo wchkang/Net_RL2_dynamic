@@ -291,7 +291,10 @@ for param in net.fc.parameters():
     param.requires_grad = True
 
 print('\n######### Finetuning High-Performance Model ###########\n')
-  
+
+best_acc = 0
+best_acc_top5 = 0
+
 checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
