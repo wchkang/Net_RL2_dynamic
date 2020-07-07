@@ -317,8 +317,8 @@ for i in range(1,5): # Layers. Skip the first layer
 for param in net.fc.parameters():
     param.requires_grad = True
 
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
+#checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+#net.load_state_dict(checkpoint['net_state_dict'])
 
 # For finetuning, set initial lr args.lr*0.1
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -363,7 +363,7 @@ for i in range(args.starting_epoch, 75):
     skip = False
     freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+226, skip = False, freeze_bn = True)
+    func_train(i+226, skip = skip, freeze_bn = freeze_bn)
     test(i+226, skip)
     
     stop = timeit.default_timer()
