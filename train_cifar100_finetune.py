@@ -259,7 +259,7 @@ for param in net.fc.parameters():
     param.requires_grad = True
 
 # For finetuning, set initial lr args.lr*0.1
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 150):
     skip = False
@@ -278,7 +278,7 @@ checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(
 net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
     skip = False
     freeze_bn = True
@@ -296,7 +296,7 @@ checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(
 net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.001, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
     skip = False
     freeze_bn = True
