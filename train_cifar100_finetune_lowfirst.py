@@ -309,11 +309,11 @@ for i in range(1,5): # Layers. Skip the first layer
         #print("layer: %s, block: %s" %(i, j))
         layer[j].coeff_conv1.weight.requires_grad = True
         layer[j].coeff_conv2.weight.requires_grad = True
+        if num_skip_blocks == 1: 
+        # basis is used only for high-perf models. Hence needs retraining.
+            layer[j].shared_basis.weight.requires_grad = True
 for param in net.fc.parameters():
     param.requires_grad = True
-
-best_acc = 0
-best_acc_top5 = 0
 
 checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'])

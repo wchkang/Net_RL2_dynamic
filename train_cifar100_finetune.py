@@ -235,64 +235,6 @@ if args.pretrained != None:
     net.load_state_dict(checkpoint['net_state_dict'])
     best_acc = checkpoint['acc']
 
-print('\n######### Initial Training ###########\n')
-for i in range(args.starting_epoch, 200):
-    if (randint(0,1) == 0):
-        skip = True
-    else:
-        skip = False
-    start = timeit.default_timer()
-    func_train(i+1, skip)
-    test(i+1, skip)
-    
-    stop = timeit.default_timer()
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-
-    #============
-    
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
-for i in range(args.starting_epoch, 100):
-    if (randint(0,1) == 0):
-        skip = True
-    else:
-        skip = False
-    start = timeit.default_timer()
-    func_train(i+201, skip)
-    test(i+201, skip)
-    
-    stop = timeit.default_timer()
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-    
-    #============
-    
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
-for i in range(args.starting_epoch, 100):
-    if (randint(0,1) == 0):
-        skip = True
-    else:
-        skip = False
-    start = timeit.default_timer()
-    func_train(i+301, skip)
-    test(i+301, skip)
-    
-    stop = timeit.default_timer()
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-
 print('\n######### Finetuning High-Performance Model ###########\n')
 
 # freeze all parameters
@@ -306,24 +248,27 @@ for i in range(1,5): # Layers. Skip the first layer
     #num_skip_blocks = int(num_blocks[i]/2)
     num_skip_blocks = int(len(layer)/2)
     for j in range(num_skip_blocks, num_blocks[i]): # blocks. Skip the first block
-        #print("layer: %s, block: %s" %(i, j))
+        print("layer: %s, block: %s" %(i, j))
         layer[j].coeff_conv1.weight.requires_grad = True
         layer[j].coeff_conv2.weight.requires_grad = True
+        if num_skip_blocks == 1: 
+        # basis is used only for high-perf models. Hence needs retraining.
+            layer[j].shared_basis.weight.requires_grad = True
+
 for param in net.fc.parameters():
     param.requires_grad = True
 
 best_acc = 0
 best_acc_top5 = 0
 
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-
 # For finetuning, set initial lr args.lr*0.1
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+1, skip = False, freeze_bn = True)
+    func_train(i+1, skip=skip, freeze_bn=freeze_bn)
     test(i+1, skip)
     
     stop = timeit.default_timer()
@@ -338,8 +283,10 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+76, skip = False, freeze_bn = True)
+    func_train(i+76, skip = skip, freeze_bn = freeze_bn)
     test(i+76, skip)
     
     stop = timeit.default_timer()
@@ -354,8 +301,10 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.001, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+151, skip = False, freeze_bn = True)
+    func_train(i+151, skip = skip, freeze_bn = freeze_bn)
     test(i+151, skip)
     
     stop = timeit.default_timer()
