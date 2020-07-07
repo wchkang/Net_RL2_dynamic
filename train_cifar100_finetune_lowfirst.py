@@ -324,8 +324,10 @@ net.load_state_dict(checkpoint['net_state_dict'])
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 150):
+    skip = False
+    freeze_bn= True
     start = timeit.default_timer()
-    func_train(i+1, skip = False, freeze_bn = True)
+    func_train(i+1, skip = skip, freeze_bn = freeze_bn)
     test(i+1, skip)
     
     stop = timeit.default_timer()
@@ -340,8 +342,10 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+151, skip = False, freeze_bn = True)
+    func_train(i+151, skip = skip, freeze_bn = freeze_bn)
     test(i+151, skip)
     
     stop = timeit.default_timer()
@@ -356,6 +360,8 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.001, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
     start = timeit.default_timer()
     func_train(i+226, skip = False, freeze_bn = True)
     test(i+226, skip)
