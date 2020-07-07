@@ -258,13 +258,13 @@ for i in range(1,5): # Layers. Skip the first layer
 for param in net.fc.parameters():
     param.requires_grad = True
 
-best_acc = 0
-best_acc_top5 = 0
+#best_acc = 0
+#best_acc_top5 = 0
 
 # For finetuning, set initial lr args.lr*0.1
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 
-for i in range(args.starting_epoch, 75):
+for i in range(args.starting_epoch, 150):
     skip = False
     freeze_bn = True
     start = timeit.default_timer()
@@ -286,8 +286,8 @@ for i in range(args.starting_epoch, 75):
     skip = False
     freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+76, skip = skip, freeze_bn = freeze_bn)
-    test(i+76, skip)
+    func_train(i+151, skip = skip, freeze_bn = freeze_bn)
+    test(i+151, skip)
     
     stop = timeit.default_timer()
     print('skip:', skip)
@@ -304,8 +304,8 @@ for i in range(args.starting_epoch, 75):
     skip = False
     freeze_bn = True
     start = timeit.default_timer()
-    func_train(i+151, skip = skip, freeze_bn = freeze_bn)
-    test(i+151, skip)
+    func_train(i+226, skip = skip, freeze_bn = freeze_bn)
+    test(i+226, skip)
     
     stop = timeit.default_timer()
     print('skip:', skip)
