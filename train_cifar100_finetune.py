@@ -258,11 +258,8 @@ for i in range(1,5): # Layers. Skip the first layer
 for param in net.fc.parameters():
     param.requires_grad = True
 
-#best_acc = 0
-#best_acc_top5 = 0
-
 # For finetuning, set initial lr args.lr*0.1
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 150):
     skip = False
