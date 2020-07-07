@@ -109,7 +109,7 @@ def train_basis(epoch, skip=False, freeze_bn=False):
         for module in net.modules():
             if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
                 module.eval()
-                
+
     correct_top1 = 0
     correct_top5 = 0
     total = 0
@@ -247,19 +247,14 @@ for i in range(1,5): # Layers. Skip the first layer
     layer = getattr(net,"layer"+str(i))
     #num_skip_blocks = int(num_blocks[i]/2)
     num_skip_blocks = int(len(layer)/2)
-    if num_skip_blocks == 1: 
-        # basis is used only for high-perf models. Hence needs retraining.
-            layer.shared_basis.weight.requires_grad = True
-
     for j in range(num_skip_blocks, num_blocks[i]): # blocks. Skip the first block
         print("layer: %s, block: %s" %(i, j))
         layer[j].coeff_conv1.weight.requires_grad = True
         layer[j].coeff_conv2.weight.requires_grad = True
-        '''
         if num_skip_blocks == 1: 
         # basis is used only for high-perf models. Hence needs retraining.
             layer[j].shared_basis.weight.requires_grad = True
-        '''
+        
 for param in net.fc.parameters():
     param.requires_grad = True
 
