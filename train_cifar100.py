@@ -99,10 +99,17 @@ def train(epoch):
 # Training for parameter shraed models
 # Use the property of orthogonal matrices;
 # e.g.: AxA.T = I if A is orthogonal 
-def train_basis(epoch, skip=False):
+def train_basis(epoch, skip=False, freeze_bn=False):
     print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
     net.train()
-    
+
+    if (freeze_bn):
+        # bn layers need to be freezed explicitly since 
+        # they cannot be freezed via '.requires_grad=False'
+        for module in net.modules():
+            if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+                module.eval()
+
     correct_top1 = 0
     correct_top5 = 0
     total = 0
@@ -214,32 +221,25 @@ def test(epoch, skip=False):
         print("Best_Acc_top1 = %.3f" % acc_top1)
         print("Best_Acc_top5 = %.3f" % acc_top5)
         
-def adjust_learning_rate(optimizer, epoch, args_lr):
-    lr = args_lr
-    if epoch > 150:
-        lr = lr * 0.1
-    if epoch > 225:
-        lr = lr * 0.1
-
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-        
 best_acc = 0
 best_acc_top5 = 0
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 func_train = train
 if 'SingleShared' in args.model or 'SharedOnly' in args.model:
     func_train = train_basis
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'])
     best_acc = checkpoint['acc']
-                                
-for i in range(args.starting_epoch, 150):
-    if (randint(0,2) == 0):
+
+'''
+print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
+
+for i in range(args.starting_epoch, 200):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
@@ -258,8 +258,8 @@ net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
-for i in range(args.starting_epoch, 75):
-    if (randint(0,2) == 0):
+for i in range(args.starting_epoch, 100):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
@@ -278,13 +278,93 @@ net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
-for i in range(args.starting_epoch, 75):
-    if (randint(0,2) == 0):
+for i in range(args.starting_epoch, 100):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
     start = timeit.default_timer()
     func_train(i+226, skip)
+    test(i+226, skip)
+    
+    stop = timeit.default_timer()
+    print('skip:', skip)
+    print('Time: {:.3f}'.format(stop - start))  
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
+'''
+print('\n######### Finetuning High-Performance Model ###########\n')
+
+best_acc = 0
+best_acc_top5 = 0
+
+# freeze all parameters
+for param in net.parameters():
+    param.requires_grad = False
+
+# defreeze params of only being used by the high-performance model
+num_blocks =[0, 3, 4, 6, 3]
+for i in range(1,5): # Layers. Skip the first layer
+    layer = getattr(net,"layer"+str(i))
+    #num_skip_blocks = int(num_blocks[i]/2)
+    num_skip_blocks = int(len(layer)/2)
+    for j in range(num_skip_blocks, num_blocks[i]): # blocks. Skip the first block
+        print("layer: %s, block: %s" %(i, j))
+        layer[j].coeff_conv1.weight.requires_grad = True
+        layer[j].coeff_conv2.weight.requires_grad = True
+        if num_skip_blocks == 1: 
+        # basis is used only for high-perf models. Hence needs retraining.
+            layer[j].shared_basis.weight.requires_grad = True
+
+# defreeze params of FC layer
+for param in net.fc.parameters():
+    param.requires_grad = True
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+for i in range(args.starting_epoch, 150):
+    skip = False
+    freeze_bn = True
+    start = timeit.default_timer()
+    func_train(i+1, skip=skip, freeze_bn=freeze_bn)
+    test(i+1, skip)
+    
+    stop = timeit.default_timer()
+    print('skip:', skip)
+    print('Time: {:.3f}'.format(stop - start))  
+
+    #============
+    
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'])
+best_acc = checkpoint['acc']
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
+    start = timeit.default_timer()
+    func_train(i+151, skip = skip, freeze_bn = freeze_bn)
+    test(i+151, skip)
+    
+    stop = timeit.default_timer()
+    print('skip:', skip)
+    print('Time: {:.3f}'.format(stop - start))  
+    
+    #============
+    
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'])
+best_acc = checkpoint['acc']
+
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+for i in range(args.starting_epoch, 75):
+    skip = False
+    freeze_bn = True
+    start = timeit.default_timer()
+    func_train(i+226, skip = skip, freeze_bn = freeze_bn)
     test(i+226, skip)
     
     stop = timeit.default_timer()
