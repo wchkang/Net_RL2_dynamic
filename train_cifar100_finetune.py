@@ -237,7 +237,7 @@ if args.pretrained != None:
 
 print('\n######### Initial Training ###########\n')
 for i in range(args.starting_epoch, 200):
-    if (randint(0,2) == 0):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
@@ -257,7 +257,7 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 100):
-    if (randint(0,2) == 0):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
@@ -277,7 +277,7 @@ best_acc = checkpoint['acc']
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 100):
-    if (randint(0,2) == 0):
+    if (randint(0,1) == 0):
         skip = True
     else:
         skip = False
