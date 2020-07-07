@@ -224,8 +224,6 @@ def test(epoch, skip=False):
 best_acc = 0
 best_acc_top5 = 0
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
 func_train = train
 if 'SingleShared' in args.model or 'SharedOnly' in args.model:
     func_train = train_basis
@@ -234,6 +232,9 @@ if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'])
     best_acc = checkpoint['acc']
+'''
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
 
 print('\n######### Initial Training ###########\n')
 for i in range(args.starting_epoch, 150):
@@ -291,7 +292,7 @@ for i in range(args.starting_epoch, 75):
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
+'''
 
 print('\n######### Finetuning High-Performance Model ###########\n')
 
@@ -305,10 +306,6 @@ for i in range(1,5): # Layers. Skip the first layer
     layer = getattr(net,"layer"+str(i))
     #num_skip_blocks = int(num_blocks[i]/2)
     num_skip_blocks = int(len(layer)/2)
-    if num_skip_blocks == 1: 
-    # basis is used only for high-perf models. Hence needs retraining.
-        layer.shared_basis.weight.requires_grad = True
-
     for j in range(num_skip_blocks, num_blocks[i]): # blocks. Skip the first block
         #print("layer: %s, block: %s" %(i, j))
         layer[j].coeff_conv1.weight.requires_grad = True
@@ -324,7 +321,7 @@ checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(
 net.load_state_dict(checkpoint['net_state_dict'])
 
 # For finetuning, set initial lr args.lr*0.1
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 150):
     start = timeit.default_timer()
@@ -341,7 +338,7 @@ checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(
 net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
     start = timeit.default_timer()
     func_train(i+151, skip = False, freeze_bn = True)
@@ -357,7 +354,7 @@ checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(
 net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(net.parameters(), lr=args.lr*0.001, momentum=args.momentum, weight_decay=args.weight_decay)
 for i in range(args.starting_epoch, 75):
     start = timeit.default_timer()
     func_train(i+226, skip = False, freeze_bn = True)
