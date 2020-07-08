@@ -1,7 +1,6 @@
 checkpoint/
 data/
 __pycache__/
-*.ipynb
 tee
 *.log
 *.pth
