@@ -278,14 +278,14 @@ if args.pretrained != None:
 
 print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
 
-train_epochs = (150,75,75)
+train_epochs = (200,100,100)
 base_epoch = [1,]
 for i in range(1, len(train_epochs)):
     base_epoch.append(base_epoch[i-1]+train_epochs[i-1])
 
 for i in range(args.starting_epoch, train_epochs[0]):
     net.train()
-    if (randint(0,1) == 0):
+    if (randint(0,2) != 0):
         skip = True
         freeze_highperf_model(net)
     else:
@@ -309,7 +309,7 @@ best_acc = checkpoint['acc']
 
 for i in range(args.starting_epoch, train_epochs[1]):
     net.train()
-    if (randint(0,1) == 0):
+    if (randint(0,2) != 0):
         skip = True
         optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
     else:
@@ -333,7 +333,7 @@ best_acc = checkpoint['acc']
 
 for i in range(args.starting_epoch, train_epochs[2]):
     net.train()
-    if (randint(0,1) == 0):
+    if (randint(0,2) != 0):
         skip = True
         optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
     else:

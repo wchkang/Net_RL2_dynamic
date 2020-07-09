@@ -297,7 +297,6 @@ class ResNet_SharedOnly(nn.Module):
         x = self.fc(x)
      
         return x
-    
 
 class SkippableSequential(nn.Sequential):
     def forward(self, input, skip=False):
@@ -307,6 +306,17 @@ class SkippableSequential(nn.Sequential):
             n_modules = len(self)
         for i in range(n_modules):
             input = self[i](input)
+        return input
+
+class SkippableSequential_test(nn.Sequential):
+    def forward(self, input, skip=False):
+        n_half_modules = int(len(self)/2)
+        for i in range(n_half_modules):
+            input = self[i](input)
+        if skip == False:
+            for i in range(n_half_modules, len(self)):
+                input = self[i](input)
+            input = input*2.0   # test:wchkang: some attention mechanism?
         return input
 
 # Proposed ResNet sharing a single basis for each residual block group
@@ -334,7 +344,7 @@ class ResNet_SingleShared(nn.Module):
         # fc layer for the original model
         self.fc = nn.Linear(512, num_classes)
         # fc layer for the scaled-down model
-        self.fc_scale = nn.Linear(512, num_classes)
+        self.fc_skip = nn.Linear(512, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -374,7 +384,7 @@ class ResNet_SingleShared(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         if skip == True:
-            x = self.fc_scale(x)
+            x = self.fc_skip(x)
         else:
             x = self.fc(x)
      
