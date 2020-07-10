@@ -233,13 +233,13 @@ def freeze_lowperf_model(net):
             #print("layer: %s, block: %s" %(i, j))
             layer[j].coeff_conv1.weight.requires_grad = True
             layer[j].coeff_conv2.weight.requires_grad = True
+            layer[j].basis_bn1.train()
+            layer[j].basis_bn2.train()
             layer[j].bn1.train()
             layer[j].bn2.train()
             if num_skip_blocks == 1: 
             # basis is used only for high-perf models. Hence needs retraining.
                 layer[j].shared_basis.weight.requires_grad = True
-                layer[j].basis_bn1.train()
-                layer[j].basis_bn2.train()
 
     # defreeze params of FC layer
     net.fc.weight.requires_grad = True
@@ -255,6 +255,10 @@ def freeze_highperf_model(net):
             #print("layer: %s, block: %s" %(i, j))
             layer[j].coeff_conv1.weight.requires_grad = False
             layer[j].coeff_conv2.weight.requires_grad = False
+            layer[j].basis_bn1.eval()
+            layer[j].basis_bn2.eval()
+            layer[j].bn1.eval()
+            layer[j].bn2.eval()
             if num_skip_blocks == 1: 
             # basis is used only for high-perf models. Hence needs retraining.
                 layer[j].shared_basis.weight.requires_grad = False
