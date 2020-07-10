@@ -238,6 +238,9 @@ def freeze_lowperf_model(net):
             if num_skip_blocks == 1: 
             # basis is used only for high-perf models. Hence needs retraining.
                 layer[j].shared_basis.weight.requires_grad = True
+                layer[j].basis_bn1.train()
+                layer[j].basis_bn2.train()
+
     # defreeze params of FC layer
     net.fc.weight.requires_grad = True
     net.fc.bias.requires_grad = True        
@@ -376,7 +379,6 @@ for i in range(args.starting_epoch, 75):
     test(1+i, skip=False)
     stop = timeit.default_timer()
 
-    print('skip:', skip)
     print('Time: {:.3f}'.format(stop - start))  
 
 checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
@@ -392,7 +394,6 @@ for i in range(args.starting_epoch, 75):
     test(76+i, skip=False)
     stop = timeit.default_timer()
 
-    print('skip:', skip)
     print('Time: {:.3f}'.format(stop - start))  
 
 print("Best_Acc_top1 = %.3f" % best_acc)
