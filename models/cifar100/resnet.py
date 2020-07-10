@@ -316,7 +316,7 @@ class SkippableSequential_test(nn.Sequential):
         if skip == False:
             for i in range(n_half_modules, len(self)):
                 input = self[i](input)
-            input = input*2.0   # test:wchkang: some attention mechanism?
+            input = input+0.5   # test:wchkang: some attention mechanism?
         return input
 
 # Proposed ResNet sharing a single basis for each residual block group
