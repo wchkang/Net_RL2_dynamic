@@ -167,7 +167,7 @@ def train_basis(epoch, skip=False):
         #print("[Skip] Training_Acc_top5 = %.3f" % acc_top5)
                                 
 #Test for models
-def test(epoch, skip=False):
+def test(epoch, skip=False, update_best=True):
     global best_acc
     global best_acc_top5
     net.eval()
@@ -196,8 +196,7 @@ def test(epoch, skip=False):
     print("Test_Acc_top1 = %.3f" % acc_top1)
     #print("Test_Acc_top5 = %.3f" % acc_top5)
 
-    #if acc_top1 > best_acc:
-    if skip==True and acc_top1 > best_acc:
+    if update_best==True and acc_top1 > best_acc:
         #print('Saving..')
         state = {
             'net_state_dict': net.state_dict(),
@@ -215,6 +214,7 @@ def test(epoch, skip=False):
 
 
 def freeze_lowperf_model(net):
+    '''Freeze low-performance mode while enabling the training of high-perf model'''
     # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
     for module in net.modules():
         if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
@@ -246,6 +246,7 @@ def freeze_lowperf_model(net):
     net.fc.bias.requires_grad = True        
 
 def freeze_highperf_model(net):
+    '''Freeze high-performance mode while enabling the training of low-perf model'''
     # freeze params of only being used by the high-performance model
     num_blocks =[0, 3, 4, 6, 3]
     for i in range(1,5): # Layers. Skip the first layer
@@ -270,6 +271,8 @@ def defreeze_model(net, freeze_bn=True):
     # defreeze all parameters
     for param in net.parameters():
         param.requires_grad = True
+    # make the whole network trainable
+    net.train()
 
 best_acc = 0
 best_acc_top5 = 0
@@ -290,14 +293,13 @@ base_epoch = [1,]
 for i in range(1, len(train_epochs)):
     base_epoch.append(base_epoch[i-1]+train_epochs[i-1])
 
+net.train()
 for i in range(args.starting_epoch, train_epochs[0]):
-    net.train()
     if (randint(0,1) == 0):
         skip = True
         freeze_highperf_model(net)
     else:
         skip = False
-        #freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(i+1, skip)
@@ -315,13 +317,11 @@ net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
 for i in range(args.starting_epoch, train_epochs[1]):
-    net.train()
     if (randint(0,1) == 0):
         skip = True
-        optimizer = optim.SGD(net.parameters(), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+        freeze_highperf_model(net)
     else:
         skip = False
-        #freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(i+151, skip)
@@ -339,13 +339,11 @@ net.load_state_dict(checkpoint['net_state_dict'])
 best_acc = checkpoint['acc']
 
 for i in range(args.starting_epoch, train_epochs[2]):
-    net.train()
     if (randint(0,1) == 0):
         skip = True
-        optimizer = optim.SGD(net.parameters(), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+        freeze_highperf_model(net)
     else:
         skip = False
-        #freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(i+226, skip)
@@ -372,14 +370,15 @@ print('\n######### Finetuning High-Performance Model ###########\n')
 best_acc = 0
 best_acc_top5 = 0
 
-net.train()
+defreeze_model(net)
 freeze_lowperf_model(net)
+
 optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
 
 for i in range(args.starting_epoch, 75):
     start = timeit.default_timer()
     func_train(1+i, skip=False)
-    test(1+i, skip=True)
+    test(1+i, skip=True, update_best=False)
     test(1+i, skip=False)
     stop = timeit.default_timer()
 
@@ -394,11 +393,27 @@ optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=ar
 for i in range(args.starting_epoch, 75):
     start = timeit.default_timer()
     func_train(76+i, skip=False)
-    test(76+i, skip=True)
+    test(76+i, skip=True, update_best=False)
     test(76+i, skip=False)
     stop = timeit.default_timer()
 
     print('Time: {:.3f}'.format(stop - start))  
+
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'])
+best_acc = checkpoint['acc']
+
+optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.005, momentum=args.momentum, weight_decay=args.weight_decay)
+
+for i in range(args.starting_epoch, 75):
+    start = timeit.default_timer()
+    func_train(151+i, skip=False)
+    test(151+i, skip=True, update_best=False)
+    test(151+i, skip=False)
+    stop = timeit.default_timer()
+
+    print('Time: {:.3f}'.format(stop - start))  
+
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
