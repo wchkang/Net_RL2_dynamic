@@ -22,6 +22,7 @@ parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES'
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--dataset_path', default="./data/", help='A path to dataset directory')
 parser.add_argument('--model', default="ResNet56_DoubleShared", help='ResNet20, ResNet32, ResNet44, ResNet56, ResNet110, ResNet1202, ResNet56_DoubleShared, ResNet32_DoubleShared, ResNet56_SingleShared, ResNet32_SingleShared, ResNet56_SharedOnly, ResNet32_SharedOnly, ResNet56_NonShared, ResNet32_NonShared')
+parser.add_argument('--skip', default=False, action='store_true', help='Execute a scaled-down model')
 args = parser.parse_args()
 
 from models.cifar10 import resnet
@@ -58,7 +59,7 @@ def evaluation():
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = net(inputs, skip=args.skip)
             
             _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 

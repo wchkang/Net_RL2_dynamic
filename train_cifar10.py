@@ -12,6 +12,7 @@ import argparse
 
 import utils
 import timeit
+from random import randint
 
 #Possible arguments
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
@@ -94,12 +95,15 @@ def train(epoch):
     print("Training_Acc_Top1 = %.3f" % acc_top1)
     print("Training_Acc_Top5 = %.3f" % acc_top5)
 
-# Training for parameter shraed models
-# Use the property of orthogonal matrices;
-# e.g.: AxA.T = I if A is orthogonal 
-def train_basis(epoch, include_unique_basis=True):
+def train_basis(epoch, skip=False, include_unique_basis=True):
+    """Train roultine for DoubleShared CIFAR10 models.
+
+    Arguments:
+        skip: if True, skip some blocks
+        include_unique_basis: if True, include unique basis for calculating similarity loss
+    """
     print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
-    net.train()
+    #net.train()  % 
     
     correct_top1 = 0
     correct_top5 = 0
@@ -109,8 +113,8 @@ def train_basis(epoch, include_unique_basis=True):
         inputs, targets = inputs.to(device), targets.to(device)
     
         optimizer.zero_grad()
-        outputs = net(inputs)
-        
+        outputs = net(inputs, skip=skip)
+           
         _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
         label_e = targets.view(targets.size(0), -1).expand_as(pred)
@@ -186,11 +190,17 @@ def train_basis(epoch, include_unique_basis=True):
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
     
-    print("Training_Acc_Top1 = %.3f" % acc_top1)
-    print("Training_Acc_Top5 = %.3f" % acc_top5)
+    if skip==True:
+        print("[skip] Training_Acc_Top1 = %.3f" % acc_top1)
+    else:
+        print("Training_Acc_Top1 = %.3f" % acc_top1)
+    #print("Training_Acc_Top5 = %.3f" % acc_top5)
     
-# Training for parameter shraed models, in case of single shared basis per basicblock
 def train_basis_single(epoch, include_unique_basis=True):
+    """ Train roultine for SingleShared CIFAR10 models. 
+
+        TODO (wchkang/20200713): update to make it skippable
+    """
     print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
     net.train()
     
@@ -281,8 +291,11 @@ def train_basis_single(epoch, include_unique_basis=True):
     print("Training_Acc_Top1 = %.3f" % acc_top1)
     print("Training_Acc_Top5 = %.3f" % acc_top5)
     
-# Training for parameter shraed models, in case of using shared bases only
 def train_basis_sharedonly(epoch):
+    """ Train roultine for ShareOnly CIFAR10 models. 
+
+    TODO (wchkang/20200713): update to make it skippable
+    """
     print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
     net.train()
     
@@ -353,8 +366,13 @@ def train_basis_sharedonly(epoch):
     print("Training_Acc_Top1 = %.3f" % acc_top1)
     print("Training_Acc_Top5 = %.3f" % acc_top5)
     
-#Test for models
-def test(epoch):
+def test(epoch, skip=False, update_best=True):
+    """ Train roultine for SingleShared CIFAR10 models. 
+
+    Arguments:
+        skip: if True, skip some blocks
+        update_best: if True, update best_acc and save the model when a best model is found
+    """
     global best_acc
     global best_acc_top5
     net.eval()
@@ -365,7 +383,7 @@ def test(epoch):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = net(inputs, skip)
             
             _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
@@ -380,7 +398,9 @@ def test(epoch):
     # Save checkpoint.
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
-    if acc_top1 > best_acc:
+    print("Test_Acc_top1 = %.3f" % acc_top1)
+
+    if update_best == True and acc_top1 > best_acc:
         #print('Saving..')
         state = {
             'net_state_dict': net.state_dict(),
@@ -394,8 +414,108 @@ def test(epoch):
         best_acc = acc_top1
         best_acc_top5 = acc_top5
         print("Best_Acc_top1 = %.3f" % acc_top1)
-        print("Best_Acc_top5 = %.3f" % acc_top5)
+        #print("Best_Acc_top5 = %.3f" % acc_top5)
+
+
+def freeze_highperf_model(net):
+    """ Freeze the high-performance model while enabling the training of the low-perf model. """
+    
+    # freeze params of only being used by the high-performance model
+    for i in range(1,4): # CIFAR10 layers. Skip the first layer
+        layer = getattr(net,"layer"+str(i))
+        num_skip_blocks = round(len(layer)/2)
+        layer[num_skip_blocks-1].bn2.eval()
+        layer[num_skip_blocks-1].coeff_conv2.weight.requires_grad = False
+        for j in range(num_skip_blocks, len(layer)): # CIFAR10 blocks of the high-perf model
+            #print("layer: %s, block: %s" %(i, j))
+            layer[j].coeff_conv1.weight.requires_grad = False
+            layer[j].coeff_conv2.weight.requires_grad = False
+            layer[j].basis_bn1.eval()
+            layer[j].basis_bn2.eval()
+            layer[j].bn1.eval()
+            layer[j].bn2.eval()
+            if num_skip_blocks == 1: 
+            # if basis is not used by the low-perf model, it needs to be trained
+                layer[j].shared_basis1_1.weight.requires_grad = False
+                layer[j].shared_basis1_2.weight.requires_grad = False
+    # freeze params of high-perf FC layer
+    net.fc.weight.requires_grad = False
+    net.fc.bias.requires_grad = False
+
+def freeze_lowperf_model(net):
+    """ Freeze parts of low-performance model while enabling the training of high-perf model """
+    for i in range(1,4): # Layers. Skip the first layer
+        layer = getattr(net,"layer"+str(i))
+        num_skip_blocks = round(len(layer)/2)
+        layer[num_skip_blocks-1].bn2_skip.eval()
+        layer[num_skip_blocks-1].coeff_conv2_skip.weight.requires_grad = False
+    # freeze params of low-perf FC layer
+    net.fc_skip.weight.requires_grad = False
+    net.fc_skip.bias.requires_grad = False
+
+def freeze_lowperf_model_all(net):
+    """ Freeze the low-performance model while enabling the training of high-perf model """
+
+    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
+    for module in net.modules():
+        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+            module.eval()
+
+    # freeze all parameters
+    for param in net.parameters():
+        param.requires_grad = False
+
+    # defreeze params of only being used by the high-performance model
+    for i in range(1,4): # Layers. Skip the first layer
+        layer = getattr(net,"layer"+str(i))
+        num_skip_blocks = round(len(layer)/2)
+        for j in range(num_skip_blocks, len(layer)): # blocks. 
+            layer[j].coeff_conv1.weight.requires_grad = True
+            layer[j].coeff_conv2.weight.requires_grad = True
+            layer[j].basis_bn1.train()
+            layer[j].basis_bn2.train()
+            layer[j].bn1.train()
+            layer[j].bn2.train()
+            if num_skip_blocks == 1: 
+            # basis is used only for high-perf models. Hence needs retraining.
+                layer[j].shared_basis_1_1.weight.requires_grad = True
+                layer[j].shared_basis_1_2.weight.requires_grad = True
+    # defreeze params of high-perf FC layer
+    net.fc.weight.requires_grad = True
+    net.fc.bias.requires_grad = True  
+
+def freeze_all_but_lowperf_fc(net):
+    """ Used to freeze all parameters except 'bn2_skip' and 'fc_skip' layers. """
+    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
+    for module in net.modules():
+        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+            module.eval()
+    
+    # freeze all parameters
+    for param in net.parameters():
+        param.requires_grad = False
+    
+    # make intermediate BNs trainable
+    for i in range(1,4):
+        layer = getattr(net, "layer"+str(i))
+        n_skip = round(len(layer)/2) 
+        layer[n_skip-1].coeff_conv2_skip.weight.requires_grad=True
+        layer[n_skip-1].bn2_skip.train()
+        for param in layer[n_skip-1].bn2_skip.parameters():
+            param.requires_grad = True
         
+    net.fc_skip.weight.requires_grad = True
+    net.fc_skip.bias.requires_grad = True
+
+def defreeze_model(net):
+    """ Defreeze all parameters and enable training. Must be called to enable training. """
+    # defreeze all parameters
+    for param in net.parameters():
+        param.requires_grad = True
+    # make the whole network trainable
+    net.train()
+
+
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
     if epoch > 150:
@@ -417,6 +537,17 @@ def adjust_learning_rate_long(optimizer, epoch, args_lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+def adjust_learning_rate_finetune(optimizer, epoch, args_lr):
+    lr = args_lr
+    if epoch > 50:
+        lr = lr * 0.1
+    if epoch > 100:
+        lr = lr * 0.1
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+
 best_acc = 0
 best_acc_top5 = 0
 
@@ -428,23 +559,65 @@ elif 'SingleShared' in args.model:
 elif 'SharedOnly' in args.model:
     func_train = train_basis_sharedonly
 
+
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
-    net.load_state_dict(checkpoint['net_state_dict'])
+    net.load_state_dict(checkpoint['net_state_dict'], strict=False)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
+'''
+net.train()
+for i in range(args.starting_epoch, 500):
+    if (randint(0,2) == 0): # give more chance to high-perf model
+        skip = True
+        freeze_highperf_model(net)
+    else:
+        skip = False     
+        freeze_lowperf_model(net)
+
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     
-for i in range(args.starting_epoch, 300):
     start = timeit.default_timer()
     
-    adjust_learning_rate(optimizer, i+1, args.lr)
-    func_train(i+1)
-    test(i+1)
+    adjust_learning_rate_long(optimizer, i+1, args.lr)
+    func_train(i+1, skip=skip)
     
     stop = timeit.default_timer()
-    print('Time: ', stop - start)  
+    
+    test(i+1, skip=True)
+    test(i+i, skip=False)
+        
+    defreeze_model(net)
+
+    print("Skip:", skip)
+    print('Time: {:.3f}'.format(stop - start))
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
+'''
+## finetuning
+best_acc = 92.61
+best_acc_top5 = 0
+net.train()
+for i in range(args.starting_epoch, 30):
+    #freeze_all_but_lowperf_fc(net)
+    freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+    #adjust_learning_rate(optimizer, i+1, args.lr)
+    func_train(i+1, skip=False)
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+i, skip=False)
+        
+    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
