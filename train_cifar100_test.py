@@ -212,44 +212,9 @@ def test(epoch, skip=False, update_best=True):
         print("Best_Acc_top1 = %.3f" % acc_top1)
         #print("Best_Acc_top5 = %.3f" % acc_top5)
 
-def freeze_highperf_model(net):
-    """ Freeze the high-performance model while enabling the training of the low-perf model. """
-    
-    # freeze params of only being used by the high-performance model
-    for i in range(1,5): # CIFAR100 layers. Skip the first layer
-        layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2.eval()
-        layer[num_skip_blocks-1].coeff_conv2.weight.requires_grad = False
-        for j in range(num_skip_blocks, len(layer)): # CIFAR100 blocks of the high-perf model
-            #print("layer: %s, block: %s" %(i, j))
-            layer[j].coeff_conv1.weight.requires_grad = False
-            layer[j].coeff_conv2.weight.requires_grad = False
-            layer[j].basis_bn1.eval()
-            layer[j].basis_bn2.eval()
-            layer[j].bn1.eval()
-            layer[j].bn2.eval()
-            if num_skip_blocks == 1: 
-            # if basis is not used by the low-perf model, it needs to be trained
-                layer[j].shared_basis.weight.requires_grad = False
-    # freeze params of high-perf FC layer
-    net.fc.weight.requires_grad = False
-    net.fc.bias.requires_grad = False
 
 def freeze_lowperf_model(net):
-    """ Freeze parts of low-performance model while enabling the training of high-perf model """
-    for i in range(1,4): # Layers. Skip the first layer
-        layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2_skip.eval()
-        layer[num_skip_blocks-1].coeff_conv2_skip.weight.requires_grad = False
-    # freeze params of low-perf FC layer
-    net.fc_skip.weight.requires_grad = False
-    net.fc_skip.bias.requires_grad = False
-
-def freeze_lowperf_model_all(net):
-    """ Freeze the low-performance model while enabling the training of high-perf model """
-
+    '''Freeze low-performance mode while enabling the training of high-perf model'''
     # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
     for module in net.modules():
         if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
@@ -260,10 +225,13 @@ def freeze_lowperf_model_all(net):
         param.requires_grad = False
 
     # defreeze params of only being used by the high-performance model
-    for i in range(1,4): # Layers. Skip the first layer
+    num_blocks =[0, 3, 4, 6, 3]
+    for i in range(1,5): # Layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
+        #num_skip_blocks = int(len(layer)/2)
         num_skip_blocks = round(len(layer)/2)
-        for j in range(num_skip_blocks, len(layer)): # blocks. 
+        for j in range(num_skip_blocks, num_blocks[i]): # blocks. Skip the first block
+            #print("layer: %s, block: %s" %(i, j))
             layer[j].coeff_conv1.weight.requires_grad = True
             layer[j].coeff_conv2.weight.requires_grad = True
             layer[j].basis_bn1.train()
@@ -274,41 +242,52 @@ def freeze_lowperf_model_all(net):
             # basis is used only for high-perf models. Hence needs retraining.
                 layer[j].shared_basis.weight.requires_grad = True
 
-    # defreeze params of high-perf FC layer
+    # defreeze params of FC layer
     net.fc.weight.requires_grad = True
-    net.fc.bias.requires_grad = True  
+    net.fc.bias.requires_grad = True        
 
-def freeze_all_but_lowperf_fc(net):
-    """ Used to freeze all parameters except 'bn2_skip' and 'fc_skip' layers. """
-    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
-    for module in net.modules():
-        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
-            module.eval()
-    
-    # freeze all parameters
-    for param in net.parameters():
-        param.requires_grad = False
-    
-    # make intermediate BNs trainable
-    for i in range(1,4):
-        layer = getattr(net, "layer"+str(i))
-        n_skip = round(len(layer)/2) 
-        layer[n_skip-1].coeff_conv2_skip.weight.requires_grad=True
-        layer[n_skip-1].bn2_skip.train()
-        for param in layer[n_skip-1].bn2_skip.parameters():
-            param.requires_grad = True
-        
-    net.fc_skip.weight.requires_grad = True
-    net.fc_skip.bias.requires_grad = True
 
-def defreeze_model(net):
-    """ Defreeze all parameters and enable training. Must be called to enable training. """
+def freeze_highperf_model(net):
+    '''Freeze high-performance mode while enabling the training of low-perf model'''
+    # freeze params of only being used by the high-performance model
+    num_blocks =[0, 3, 4, 6, 3]
+    for i in range(1,5): # Layers. Skip the first layer
+        layer = getattr(net,"layer"+str(i))
+        #num_skip_blocks = int(len(layer)/2)
+        num_skip_blocks = round(len(layer)/2)
+        for j in range(num_skip_blocks, len(layer)): # blocks. Skip the first block
+            #print("layer: %s, block: %s" %(i, j))
+            layer[j].coeff_conv1.weight.requires_grad = False
+            layer[j].coeff_conv2.weight.requires_grad = False
+            layer[j].basis_bn1.eval()
+            layer[j].basis_bn2.eval()
+            layer[j].bn1.eval()
+            layer[j].bn2.eval()
+            if num_skip_blocks == 1: 
+            # basis is used only for high-perf models. Hence needs retraining.
+                layer[j].shared_basis.weight.requires_grad = False
+    # freeze params of FC layer
+    net.fc.weight.requires_grad = False
+    net.fc.bias.requires_grad = False
+
+def defreeze_model(net, freeze_bn=True):
     # defreeze all parameters
     for param in net.parameters():
         param.requires_grad = True
     # make the whole network trainable
     net.train()
 
+def freeze_all_but_lowperf_fc(net):
+    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
+    for module in net.modules():
+        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+            module.eval()
+    # freeze all parameters
+    for param in net.parameters():
+        param.requires_grad = False
+    
+    net.fc_skip.weight.requires_grad = True
+    net.fc_skip.bias.requires_grad = True
 
 best_acc = 0
 best_acc_top5 = 0
@@ -324,11 +303,11 @@ if args.pretrained != None:
 
 print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
 
-train_epochs = (225,125,125,40,40)
+train_epochs = (200,100,75,75)
 base_epoch = [1,]
 for i in range(1, len(train_epochs)):
     base_epoch.append(base_epoch[i-1]+train_epochs[i-1])
-
+'''
 # =========== phase #1 ===============
 
 net.train()
@@ -338,13 +317,12 @@ for i in range(args.starting_epoch, train_epochs[0]):
         freeze_highperf_model(net)
     else:
         skip = False
-        freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(base_epoch[0]+i, skip)
-    stop = timeit.default_timer()
     test(base_epoch[0]+i, skip=True)
     test(base_epoch[0]+i, skip=False)
+    stop = timeit.default_timer()
     defreeze_model(net)
     print('skip:', skip)
     print('Time: {:.3f}'.format(stop - start))  
@@ -363,14 +341,12 @@ for i in range(args.starting_epoch, train_epochs[1]):
         freeze_highperf_model(net)
     else:
         skip = False
-        freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(base_epoch[1]+i, skip)
-    stop = timeit.default_timer()
     test(base_epoch[1]+i, skip=True)
     test(base_epoch[1]+i, skip=False)
-    
+    stop = timeit.default_timer()
     defreeze_model(net)
     print('skip:', skip)
     print('Time: {:.3f}'.format(stop - start))  
@@ -384,19 +360,18 @@ best_acc = checkpoint['acc']
 torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
     + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
     + 'phase2-' + args.visible_device + '.pth')
-
+'''
 # Reset to get a best low-perf model
 best_acc = 0
 best_acc_top5 = 0
 
 net.train()
 for i in range(args.starting_epoch, train_epochs[2]):
-    if (randint(0,1) == 0):    # give equal chance to low- and high-perf models
+    if (randint(0,2) == 0):    
         skip = True
         freeze_highperf_model(net)
     else:
         skip = False
-        freeze_lowperf_model(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
     func_train(base_epoch[2]+i, skip)
@@ -418,63 +393,19 @@ torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
     + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
     + 'phase3-' + args.visible_device + '.pth')
 
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-print('\n######### Finetuning Low-Performance Model ###########\n')
-
-best_acc = 0
-best_acc_top5 = 0
-
-net.train()
-for i in range(args.starting_epoch, train_epochs[3]):
-    freeze_all_but_lowperf_fc(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
-    start = timeit.default_timer()
-    func_train(1+i, skip=True)
-    stop = timeit.default_timer()
-    test(base_epoch[3]+i, skip=True)
-    test(base_epoch[3]+i, skip=False, update_best=False)  
-    defreeze_model(net)
-
-    print('Time: {:.3f}'.format(stop - start))  
-
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase4-' + args.visible_device + '.pth')
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-
-
 print('\n######### Finetuning High-Performance Model ###########\n')
 
 best_acc = 0
 best_acc_top5 = 0
 
 net.train()
-for i in range(args.starting_epoch, train_epochs[4]):
-    freeze_lowperf_model_all(net)
+freeze_all_but_lowperf_fc(net)
+for i in range(args.starting_epoch, 75):
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
-    func_train(1+i, skip=False)
+    func_train(1+i, skip=True)
+    test(0+i, skip=True)
+    test(0+i, skip=False, update_best=False)  # save only low-perf best
     stop = timeit.default_timer()
-    test(base_epoch[3]+i, skip=True, update_best=False)
-    test(base_epoch[3]+i, skip=False)  
-    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
 
-    print('Time: {:.3f}'.format(stop - start))  
-
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase5-' + args.visible_device + '.pth')
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
