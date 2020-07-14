@@ -53,6 +53,19 @@ else:
     
 net = net.to(device)
 
+# parallelize 
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+if torch.cuda.device_count() > 1:
+    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+    net = MyDataParallel(net)
+
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
 
@@ -243,11 +256,9 @@ def train_basis_single(epoch, skip=False):
     acc_top5 = 100.*correct_top5/total
     
     if (skip==False):
-        print("Training_Acc_Top1 = %.3f" % acc_top1)
-        #print("Training_Acc_Top5 = %.3f" % acc_top5)
+        print("Training_Acc_top1/top5 = %.3f\t%.3f" % (acc_top1, acc_top5))
     else:
-        print("[Skip] Training_Acc_top1 = %.3f" % acc_top1)
-        #print("[Skip] Training_Acc_top5 = %.3f" % acc_top5)
+        print("[Skip] Training_Acc_top1/top5 = %.3f\t%.3f" % (acc_top1, acc_top5))
         
 #Test for models
 def test(epoch, skip=False, update_best=True):
@@ -261,7 +272,7 @@ def test(epoch, skip=False, update_best=True):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = net(inputs, skip)
             
             _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
@@ -276,6 +287,8 @@ def test(epoch, skip=False, update_best=True):
     # Save checkpoint.
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
+    print("Test_Acc_top1/top5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
     if update_best==True and (acc_top1 > best_acc or epoch % 10 ==0) :
     #if True: #for ILSVRC, save model state every epoch
         #print('Saving..')
@@ -291,8 +304,8 @@ def test(epoch, skip=False, update_best=True):
         if acc_top1 > best_acc:
             best_acc = acc_top1
             best_acc_top5 = acc_top5
-        print("Current_Acc_top1 = %.3f" % acc_top1)
-        print("Current_Acc_top5 = %.3f" % acc_top5)
+
+        print("Best_Acc_top1/top5 = %.3f\t%.3f" % (acc_top1, acc_top5))
 
 def freeze_highperf_model(net):
     """ Freeze the high-performance model while enabling the training of the low-perf model. """
