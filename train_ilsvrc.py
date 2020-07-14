@@ -12,6 +12,7 @@ import argparse
 
 import utils
 import timeit
+from random import randint
 
 #Possible arguments
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
