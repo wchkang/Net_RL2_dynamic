@@ -318,7 +318,7 @@ class ResNet_DoubleShared(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, skip=False):
         out = self.conv1(x)
         out = self.bn1(out)
         out = F.relu(out,inplace=True)
