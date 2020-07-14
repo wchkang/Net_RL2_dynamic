@@ -434,7 +434,7 @@ for i in range(args.starting_epoch, 115):
     
     start = timeit.default_timer()
     
-    adjust_learning_rate_long(optimizer, i+1, args.lr)
+    adjust_learning_rate(optimizer, i+1, args.lr)
     func_train(i+1, skip=skip)
     
     stop = timeit.default_timer()
