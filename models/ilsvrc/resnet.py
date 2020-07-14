@@ -332,9 +332,9 @@ class ResNet_DoubleShared(nn.Module):
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
         if (skip == True):
-            x = self.fc_skip(x)
+            out = self.fc_skip(out)
         else:
-            x = self.fc(x)
+            out = self.fc(out)
      
         return out
 
