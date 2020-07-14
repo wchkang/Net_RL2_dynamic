@@ -106,7 +106,7 @@ class BasicBlock_DoubleShared(nn.Module):
                 nn.BatchNorm2d(self.expansion * planes)
             )
 
-    def forward(self, x):
+    def forward(self, x, skip=False):
         out = torch.cat((self.basis_conv1(x), self.shared_basis_1(x)),dim=1)
         out = self.basis_bn1(out)
         out = self.coeff_conv1(out)
