@@ -324,7 +324,7 @@ if args.pretrained != None:
 
 print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
 
-train_epochs = (225,115,115,45,45)
+train_epochs = (200,100,100,30,30)
 base_epoch = [1,]
 for i in range(1, len(train_epochs)):
     base_epoch.append(base_epoch[i-1]+train_epochs[i-1])

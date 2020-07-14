@@ -250,7 +250,7 @@ def train_basis_single(epoch, skip=False):
         #print("[Skip] Training_Acc_top5 = %.3f" % acc_top5)
         
 #Test for models
-def test(epoch, skip=False, update_basis=True):
+def test(epoch, skip=False, update_best=True):
     global best_acc
     global best_acc_top5
     net.eval()
