@@ -238,7 +238,7 @@ def freeze_highperf_model(net):
 
 def freeze_lowperf_model(net):
     """ Freeze parts of low-performance model while enabling the training of high-perf model """
-    for i in range(1,4): # Layers. Skip the first layer
+    for i in range(1,5): # Layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
         num_skip_blocks = round(len(layer)/2)
         layer[num_skip_blocks-1].bn2_skip.eval()
@@ -260,7 +260,7 @@ def freeze_lowperf_model_all(net):
         param.requires_grad = False
 
     # defreeze params of only being used by the high-performance model
-    for i in range(1,4): # Layers. Skip the first layer
+    for i in range(1,5): # Layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
         num_skip_blocks = round(len(layer)/2)
         for j in range(num_skip_blocks, len(layer)): # blocks. 
@@ -290,7 +290,7 @@ def freeze_all_but_lowperf_fc(net):
         param.requires_grad = False
     
     # make intermediate BNs trainable
-    for i in range(1,4):
+    for i in range(1,5):
         layer = getattr(net, "layer"+str(i))
         n_skip = round(len(layer)/2) 
         layer[n_skip-1].coeff_conv2_skip.weight.requires_grad=True
@@ -324,7 +324,7 @@ if args.pretrained != None:
 
 print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
 
-train_epochs = (225,125,125,40,40)
+train_epochs = (225,115,115,45,45)
 base_epoch = [1,]
 for i in range(1, len(train_epochs)):
     base_epoch.append(base_epoch[i-1]+train_epochs[i-1])
@@ -391,7 +391,7 @@ best_acc_top5 = 0
 
 net.train()
 for i in range(args.starting_epoch, train_epochs[2]):
-    if (randint(0,1) == 0):    # give equal chance to low- and high-perf models
+    if (randint(0,2) == 0):    
         skip = True
         freeze_highperf_model(net)
     else:
