@@ -239,8 +239,7 @@ class BasicBlock_DoubleShared(nn.Module):
         out = self.coeff_conv1(out)
         
         out = self.bn1(out)
-        #out = F.relu(out, inplace=True)
-        out = F.relu(out)
+        out = F.relu(out, inplace=True)
         
         out = torch.cat((self.basis_conv2(out), self.shared_basis_2(out)),dim=1)
         out = self.basis_bn2(out)
@@ -255,8 +254,8 @@ class BasicBlock_DoubleShared(nn.Module):
             out = self.bn2(out)
 
         out += self.shortcut(x)
-        #out = F.relu(out, inplace=True)
-        out = F.relu(out)
+        out = F.relu(out, inplace=True)
+
         return out
     
 # Original BasicBlock

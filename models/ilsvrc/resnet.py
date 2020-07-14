@@ -10,7 +10,7 @@ import copy
 class BasicBlock_SingleShared(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, unique_rank, shared_basis, stride=1):
+    def __init__(self, in_planes, planes, unique_rank, shared_basis, stride=1, skippable=True):
         super(BasicBlock_SingleShared, self).__init__()
         
         self.unique_rank = unique_rank
@@ -30,6 +30,12 @@ class BasicBlock_SingleShared(nn.Module):
         
         self.bn2 = nn.BatchNorm2d(planes)
 
+        self.skippable = skippable
+        if (self.skippable == True): # these layers are used only by the low-perf model
+            self.coeff_conv2_skip = nn.Conv2d(self.total_rank, planes, kernel_size=1, stride=1, padding=0, bias=False)
+            self.bn2_skip = nn.BatchNorm2d(planes)
+
+
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes:
             self.shortcut = nn.Sequential(
@@ -37,7 +43,7 @@ class BasicBlock_SingleShared(nn.Module):
                 nn.BatchNorm2d(self.expansion * planes)
             )
 
-    def forward(self, x):
+    def forward(self, x, skip=False):
         out = torch.cat((self.basis_conv1(x), self.shared_basis(x)),dim=1)
         out = self.basis_bn1(out)
         out = self.coeff_conv1(out)
@@ -47,9 +53,15 @@ class BasicBlock_SingleShared(nn.Module):
         
         out = torch.cat((self.basis_conv2(out), self.shared_basis(out)),dim=1)
         out = self.basis_bn2(out)
-        out = self.coeff_conv2(out)
-        
-        out = self.bn2(out)
+
+        # The last layers of the low-perf model is not shared with the high-perf model
+        # to make them learn specific representaion. 
+        if self.skippable == True and skip ==True:
+            out = self.coeff_conv2_skip(out)
+            out = self.bn2_skip(out)
+        else:
+            out = self.coeff_conv2(out)
+            out = self.bn2(out)
 
         out += self.shortcut(x)
         out = F.relu(out, inplace=True)
@@ -60,7 +72,7 @@ class BasicBlock_SingleShared(nn.Module):
 class BasicBlock_DoubleShared(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, stride=1):
+    def __init__(self, in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, stride=1, skippable=True):
         super(BasicBlock_DoubleShared, self).__init__()
         
         self.unique_rank = unique_rank
@@ -82,6 +94,11 @@ class BasicBlock_DoubleShared(nn.Module):
         
         self.bn2 = nn.BatchNorm2d(planes)
 
+        self.skippable = skippable
+        if (self.skippable == True): # these layers are used only by the low-perf model
+            self.coeff_conv2_skip = nn.Conv2d(self.total_rank_2, planes, kernel_size=1, stride=1, padding=0, bias=False)
+            self.bn2_skip = nn.BatchNorm2d(planes)
+
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != planes:
             self.shortcut = nn.Sequential(
@@ -99,13 +116,19 @@ class BasicBlock_DoubleShared(nn.Module):
         
         out = torch.cat((self.basis_conv2(out), self.shared_basis_2(out)),dim=1)
         out = self.basis_bn2(out)
-        out = self.coeff_conv2(out)
-        
-        out = self.bn2(out)
+
+        # The last layers of the low-perf model is not shared with the high-perf model
+        # to make them learn specific representaion. 
+        if self.skippable == True and skip ==True:
+            out = self.coeff_conv2_skip(out)
+            out = self.bn2_skip(out)
+        else:
+            out = self.coeff_conv2(out)
+            out = self.bn2(out)
 
         out += self.shortcut(x)
         out = F.relu(out, inplace=True)
-        
+    
         return out
     
 # Original BasicBlock
@@ -139,7 +162,21 @@ class BasicBlock(nn.Module):
         out = F.relu(out, inplace=True)
         
         return out
-    
+
+class SkippableSequential(nn.Sequential):
+    """ Skip some blocks if requested. """
+    def forward(self, input, skip=False):
+        if skip == True:
+            n_skip = round(len(self)/2) 
+            for i in range(0, n_skip -1):   # execute first-half blocks 
+                input = self[i](input)
+            
+            input = self[n_skip-1](input,skip=True)  # execute the last block of the low-perf model.
+        else:
+            for b in self:  # execute all blocks
+                input = b(input)
+        return input
+
 # Proposed ResNet sharing a single basis for each residual block group
 class ResNet_SingleShared(nn.Module):
     def __init__(self, block_basis, block_original, num_blocks, shared_rank, unique_rank, num_classes=1000):
@@ -164,6 +201,7 @@ class ResNet_SingleShared(nn.Module):
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512, num_classes)
+        self.fc_skip = nn.Linear(512, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -185,12 +223,17 @@ class ResNet_SingleShared(nn.Module):
         layers.append(block_original(self.in_planes, planes, stride))
         
         self.in_planes = planes * block_original.expansion
-        for _ in range(1, blocks):
-            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis))
+        n_skip = round(blocks/2)
+        for i in range(1, n_skip -1):  
+            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis, skippable=False))
+        # Only this block needs to have params for skipping
+        layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis, skippable=True))
+        for _ in range(n_skip, blocks):
+            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis, skippable=False))
 
-        return nn.Sequential(*layers)
+        return SkippableSequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, skip=False):
         out = self.conv1(x)
         out = self.bn1(out)
         out = F.relu(out,inplace=True)
@@ -203,7 +246,10 @@ class ResNet_SingleShared(nn.Module):
 
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
-        out = self.fc(out)
+        if (skip == True):
+            x = self.fc_skip(x)
+        else:
+            x = self.fc(x)
      
         return out
     
@@ -235,6 +281,7 @@ class ResNet_DoubleShared(nn.Module):
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512, num_classes)
+        self.fc_skip = nn.Linear(512, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -261,8 +308,13 @@ class ResNet_DoubleShared(nn.Module):
         layers.append(block_original(self.in_planes, planes, stride))
         
         self.in_planes = planes * block_original.expansion
-        for _ in range(1, blocks):
-            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2))
+        n_skip = round(blocks/2)
+        for i in range(1, n_skip -1):  
+            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=False))
+        # Only this block needs to have params for skipping
+        layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=True))
+        for _ in range(n_skip, blocks):
+            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=False))
 
         return nn.Sequential(*layers)
 
@@ -279,7 +331,10 @@ class ResNet_DoubleShared(nn.Module):
 
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
-        out = self.fc(out)
+        if (skip == True):
+            x = self.fc_skip(x)
+        else:
+            x = self.fc(x)
      
         return out
 

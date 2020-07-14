@@ -547,7 +547,6 @@ def adjust_learning_rate_finetune(optimizer, epoch, args_lr):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-
 best_acc = 0
 best_acc_top5 = 0
 
@@ -558,7 +557,6 @@ elif 'SingleShared' in args.model:
     func_train = train_basis_single
 elif 'SharedOnly' in args.model:
     func_train = train_basis_sharedonly
-
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     
