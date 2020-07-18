@@ -38,7 +38,7 @@ if args.model not in dic_model:
     print("The model is currently not supported")
     sys.exit()
 
-trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=4)
+trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=8)
 testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=4)
 
 #args.visible_device sets which cuda devices to be used
@@ -300,7 +300,11 @@ def test(epoch, skip=False, update_best=True):
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/' + 'ILSVRC2012-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + "epoch" + str(epoch) + '.pth')
+        if (acc_top1 > best_acc):
+            torch.save(state, './checkpoint/' + 'ILSVRC2012-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+        else:
+            torch.save(state, './checkpoint/' + 'ILSVRC2012-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + "epoch" + str(epoch) + '.pth')
+        
         if acc_top1 > best_acc:
             best_acc = acc_top1
             best_acc_top5 = acc_top5
@@ -407,11 +411,11 @@ def defreeze_model(net):
 
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
-    if epoch > 45:
+    if epoch > 40:
         lr = lr * 0.1
-    if epoch > 75:
+    if epoch > 80:
         lr = lr * 0.1
-    if epoch > 105:
+    if epoch > 120:
         lr = lr * 0.1
 
     for param_group in optimizer.param_groups:
@@ -426,16 +430,17 @@ if 'DoubleShared' in args.model:
 elif 'SingleShared' in args.model:
     func_train = train_basis_single
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+#optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-    
+
 net.train()
-for i in range(args.starting_epoch, 115):
+#for i in range(args.starting_epoch, 115):
+for i in range(args.starting_epoch, 130):
     if (randint(0,2) == 0): # give more chance to high-perf model
         skip = True
         freeze_highperf_model(net)
@@ -453,7 +458,7 @@ for i in range(args.starting_epoch, 115):
     stop = timeit.default_timer()
     
     test(i+1, skip=True)
-    test(i+i, skip=False)
+    test(i+1, skip=False)
         
     defreeze_model(net)
 
@@ -463,26 +468,77 @@ for i in range(args.starting_epoch, 115):
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
 
+
+## finetuning for low-perf model
 '''
-## finetuning
-best_acc = 92.61
+test(1, skip=True)
+
+best_acc = 0
 best_acc_top5 = 0
 net.train()
 for i in range(args.starting_epoch, 10):
+    freeze_all_but_lowperf_fc(net)
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=0.0001, momentum=args.momentum, weight_decay=args.weight_decay)
+    start = timeit.default_timer()
+    #adjust_learning_rate(optimizer, i+1, args.lr)
+    func_train(i+1, skip=True)
+    stop = timeit.default_timer()
+
+    test(i+1, skip=True)
+    test(i+i, skip=False, update_best=False)
+        
+    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
+## finetuning for high-perf model
+
+test(1, skip=True, update_best=False)
+
+best_acc = 0
+best_acc_top5 = 0
+net.train()
+for i in range(args.starting_epoch, 20):
     #freeze_all_but_lowperf_fc(net)
     freeze_lowperf_model_all(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=0.001, momentum=args.momentum, weight_decay=args.weight_decay)
 
     start = timeit.default_timer()
     #adjust_learning_rate(optimizer, i+1, args.lr)
     func_train(i+1, skip=False)
     stop = timeit.default_timer()
     
-    test(i+1, skip=True, update_best=False)
-    test(i+i, skip=False)
+    #test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False)
         
     defreeze_model(net)
     print('Time: {:.3f}'.format(stop - start))
+
+
+best_acc = 0
+best_acc_top5 = 0
+#test(0, skip=True, update_best=False)
+net.train()
+for i in range(args.starting_epoch, 10):
+    freeze_all_but_lowperf_fc(net)
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=0.0001, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+    #adjust_learning_rate(optimizer, i+1, args.lr)
+    func_train(i+1, skip=True)
+    #func_train(i+1, skip=False)
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
+        
+    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
+
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)

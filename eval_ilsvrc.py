@@ -46,6 +46,19 @@ else:
     
 net = net.to(device)
 
+# parallelize 
+class MyDataParallel(nn.DataParallel):
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+if torch.cuda.device_count() >= 1:
+    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+    net = MyDataParallel(net)
+
 #Eval for models
 def evaluation():
     net.eval()
