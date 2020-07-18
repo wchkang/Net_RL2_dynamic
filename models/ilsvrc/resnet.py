@@ -239,10 +239,10 @@ class ResNet_SingleShared(nn.Module):
         out = F.relu(out,inplace=True)
         out = self.maxpool(out)
 
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
+        out = self.layer1(out, skip)
+        out = self.layer2(out, skip)
+        out = self.layer3(out, skip)
+        out = self.layer4(out, skip)
 
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
@@ -316,7 +316,7 @@ class ResNet_DoubleShared(nn.Module):
         for _ in range(n_skip, blocks):
             layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=False))
 
-        return nn.Sequential(*layers)
+        return SkippableSequential(*layers)
 
     def forward(self, x, skip=False):
         out = self.conv1(x)
@@ -324,10 +324,10 @@ class ResNet_DoubleShared(nn.Module):
         out = F.relu(out,inplace=True)
         out = self.maxpool(out)
 
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
+        out = self.layer1(out, skip)
+        out = self.layer2(out, skip)
+        out = self.layer3(out, skip)
+        out = self.layer4(out, skip)
 
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
