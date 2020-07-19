@@ -611,7 +611,7 @@ for i in range(args.starting_epoch, 30):
     stop = timeit.default_timer()
     
     test(i+1, skip=True, update_best=False)
-    test(i+i, skip=False)
+    test(i+1, skip=False)
         
     defreeze_model(net)
     print('Time: {:.3f}'.format(stop - start))
