@@ -585,7 +585,7 @@ for i in range(args.starting_epoch, 500):
     stop = timeit.default_timer()
     
     test(i+1, skip=True)
-    test(i+i, skip=False)
+    test(i+1, skip=False)
         
     defreeze_model(net)
 
