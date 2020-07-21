@@ -612,10 +612,14 @@ class ResNet_DoubleShared(nn.Module):
         
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        '''
         if (skip == True):
             x = self.fc_skip(x)
         else:
             x = self.fc(x)
+        '''
+        # share single FC both for low- and high-perf
+        x = self.fc(x)
         
         return x
 
