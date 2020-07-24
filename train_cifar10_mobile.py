@@ -18,8 +18,10 @@ from random import randint
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
-parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+#parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
+parser.add_argument('--weight_decay', default=4e-5, type=float, help='Weight decay')
+#parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+parser.add_argument('--batch_size', default=128, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
@@ -85,6 +87,47 @@ def train(epoch, skip=False):
         print("[skip] Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
     else:
         print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+
+def train_alter(epoch):    
+    """ train rountine of applying the average of low- and high- gradients
+    """
+
+    print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
+    net.train()
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total = 0
+    
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+    
+        optimizer.zero_grad()
+
+        for skip in  (True, False):
+            outputs = net(inputs,skip)
+            
+            _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+
+            label_e = targets.view(targets.size(0), -1).expand_as(pred)
+            correct = pred.eq(label_e).float()
+
+            correct_top5 += correct[:, :5].sum()
+            correct_top1 += correct[:, :1].sum()        
+            total += targets.size(0)
+                            
+            loss = criterion(outputs, targets)
+            if (batch_idx == 0):
+                print("accuracy_loss: %.6f" % loss)
+            loss.backward()
+
+        optimizer.step()
+    
+    acc_top1 = 100.*correct_top1/total
+    acc_top5 = 100.*correct_top5/total
+    
+    print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
 
     
 def test(epoch, skip=False, update_best=True):
@@ -256,25 +299,25 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-
+'''
 net.train()
 for i in range(args.starting_epoch, 500):
-    '''
+    
     if (randint(0,2) == 0): # give more chance to high-perf model
         skip = True
         freeze_highperf_model(net)
     else:
         skip = False     
         freeze_lowperf_model(net)
-    '''
-    if (i % 2) == 0:
-        skip = True
-        freeze_highperf_model(net)
-    else:
-        skip = False
-        freeze_lowperf_model(net)
+    
+    # if (i % 2) == 0:
+    #     skip = True
+    #     freeze_highperf_model(net)
+    # else:
+    #     skip = False
+    #     freeze_lowperf_model(net)
 
 
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -296,24 +339,71 @@ for i in range(args.starting_epoch, 500):
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
+'''
+
+### train_alter ####
+net.train()
+for i in range(args.starting_epoch, 350):
+    #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    
+    start = timeit.default_timer()
+    
+    adjust_learning_rate(optimizer, i+1, args.lr)
+    
+    train_alter(i+1)
+    net.train()
+    
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True)
+    test(i+1, skip=False)
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
 
 '''
 ## finetuning
-best_acc = 92.61
+best_acc = 0
 best_acc_top5 = 0
 net.train()
 for i in range(args.starting_epoch, 30):
-    #freeze_all_but_lowperf_fc(net)
-    freeze_lowperf_model_all(net)
+    freeze_all_but_lowperf_fc(net)
+    #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     start = timeit.default_timer()
     #adjust_learning_rate(optimizer, i+1, args.lr)
-    func_train(i+1, skip=False)
+    train(i+1, skip=True)
+    #train(i+1, skip=False)
+
     stop = timeit.default_timer()
     
-    test(i+1, skip=True, update_best=False)
-    test(i+1, skip=False)
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
+        
+    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
+
+checkpoint = torch.load('./checkpoint/' + 'CIFAR10-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, 30):
+    freeze_all_but_lowperf_fc(net)
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+    #adjust_learning_rate(optimizer, i+1, args.lr)
+    train(i+1, skip=True)
+    #train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
         
     defreeze_model(net)
     print('Time: {:.3f}'.format(stop - start))
