@@ -52,7 +52,7 @@ net = net.to(device)
 criterion = nn.CrossEntropyLoss()
 
 # Kullback Leibler divergence loss
-criterion_kd = nn.KLDivLoss()
+criterion_kd = nn.KLDivLoss(reduction='batchmean')
 
 
 #Training for standard models
@@ -64,12 +64,16 @@ def train_alter(epoch):
     correct_top5 = 0
     total = 0
     
+    alpha = 0.9
+    T = 4
+
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
 
-        # forward/backward for the full model
         optimizer.zero_grad()
-        outputs = net(inputs,skip=False)
+
+        # forward/backward for the full model
+        outputs = net(inputs,False)
         _, pred = outputs.topk(5, 1, largest=True, sorted=True)
         label_e = targets.view(targets.size(0), -1).expand_as(pred)
         correct = pred.eq(label_e).float()
@@ -82,15 +86,16 @@ def train_alter(epoch):
         loss.backward()
 
         # forward/backward for the skipped model
-        optimizer.zero_grad()
+        # optimizer.zero_grad()
         outputs_skip = net(inputs,skip=True)
-        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
         label_e = targets.view(targets.size(0), -1).expand_as(pred)
         correct = pred.eq(label_e).float()
         correct_top5 += correct[:, :5].sum()
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
-        loss_skip = criterion_kd(F.log_softmax(outputs_skip, dim=1), F.softmax(outputs, dim=1))
+        loss_skip = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.detach()/T, dim=1)) * (alpha *T*T) +\
+                    criterion(outputs_skip, targets) * (1. - alpha)
         if (batch_idx == 0):
             print("KD_loss: %.6f" % loss_skip)
         loss_skip.backward()
@@ -323,13 +328,13 @@ for i in range(args.starting_epoch, 350):
     
     adjust_learning_rate(optimizer, i+1, args.lr)
     
-    #train_alter(i+1)
     net.train()
-    train(i+1, skip=False)
+    train_alter(i+1)
+    #train(i+1, skip=False)
     
     stop = timeit.default_timer()
     
-    #test(i+1, skip=True)
+    test(i+1, skip=True)
     test(i+1, skip=False)
         
     print('Time: {:.3f}'.format(stop - start))
