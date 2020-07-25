@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
+import torch.nn.functional as F
 import sys
 import os
 import argparse
@@ -18,8 +19,10 @@ from random import randint
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
-parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+#parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
+parser.add_argument('--weight_decay', default=4e-5, type=float, help='Weight decay')
+#parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+parser.add_argument('--batch_size', default=128, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
@@ -48,6 +51,9 @@ net = net.to(device)
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
 
+# Kullback Leibler divergence loss
+criterion_kd = nn.KLDivLoss()
+
 
 #Training for standard models
 def train_alter(epoch):    
@@ -60,32 +66,81 @@ def train_alter(epoch):
     
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
-    
+
+        # forward/backward for the full model
         optimizer.zero_grad()
+        outputs = net(inputs,skip=False)
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss = criterion(outputs, targets)
+        if (batch_idx == 0):
+            print("accuracy_loss: %.6f" % loss)
+        loss.backward()
 
-        for skip in  (True, False):
-            outputs = net(inputs,skip)
-            
-            _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        # forward/backward for the skipped model
+        optimizer.zero_grad()
+        outputs_skip = net(inputs,skip=True)
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss_skip = criterion_kd(F.log_softmax(outputs_skip, dim=1), F.softmax(outputs, dim=1))
+        if (batch_idx == 0):
+            print("KD_loss: %.6f" % loss_skip)
+        loss_skip.backward()
 
-            label_e = targets.view(targets.size(0), -1).expand_as(pred)
-            correct = pred.eq(label_e).float()
-
-            correct_top5 += correct[:, :5].sum()
-            correct_top1 += correct[:, :1].sum()        
-            total += targets.size(0)
-                            
-            loss = criterion(outputs, targets)
-            if (batch_idx == 0):
-                print("accuracy_loss: %.6f" % loss)
-            loss.backward()
-
+        # update parameters
         optimizer.step()
     
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
     
     print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+
+#Training for standard models
+def train(epoch, skip=False):    
+    print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
+    #net.train()
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total = 0
+    
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+    
+        optimizer.zero_grad()
+        outputs = net(inputs,skip)
+        
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+                        
+        loss = criterion(outputs, targets)
+        if (batch_idx == 0):
+            print("accuracy_loss: %.6f" % loss)
+        loss.backward()
+        optimizer.step()
+    
+    acc_top1 = 100.*correct_top1/total
+    acc_top5 = 100.*correct_top5/total
+    
+    if skip==True:
+        print("[skip] Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+    else:
+        print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
 
     
 def test(epoch, skip=False, update_best=True):
@@ -262,17 +317,19 @@ if args.pretrained != None:
 
 net.train()
 for i in range(args.starting_epoch, 350):
-    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     
     start = timeit.default_timer()
     
     adjust_learning_rate(optimizer, i+1, args.lr)
     
-    train_alter(i+1)
+    #train_alter(i+1)
+    net.train()
+    train(i+1, skip=False)
     
     stop = timeit.default_timer()
     
-    test(i+1, skip=True)
+    #test(i+1, skip=True)
     test(i+1, skip=False)
         
     print('Time: {:.3f}'.format(stop - start))
