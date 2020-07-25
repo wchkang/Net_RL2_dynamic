@@ -86,7 +86,6 @@ def train_alter(epoch):
         loss.backward()
 
         # forward/backward for the skipped model
-        # optimizer.zero_grad()
         outputs_skip = net(inputs,skip=True)
         _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
         label_e = targets.view(targets.size(0), -1).expand_as(pred)
