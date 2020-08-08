@@ -6,6 +6,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import torchvision
 import torchvision.transforms as transforms
+import torch.nn.functional as F
 import sys
 import os
 import argparse
@@ -14,25 +15,24 @@ import utils
 import timeit
 from random import randint
 
-
 #Possible arguments
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
-parser.add_argument('--lambdaR', default=10, type=float, help='Lambda (Basis regularization)')
-parser.add_argument('--shared_rank', default=16, type=int, help='Number of shared base)')
-parser.add_argument('--unique_rank', default=1, type=int, help='Number of unique base')
-parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+#parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay')
+parser.add_argument('--weight_decay', default=4e-5, type=float, help='Weight decay')
+#parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+parser.add_argument('--batch_size', default=128, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
 parser.add_argument('--dataset_path', default="./data/", help='A path to dataset directory')
-parser.add_argument('--model', default="ResNet34_SingleShared", help='ResNet18, ResNet34, ResNet34_SingleShared, ResNet34_NonShared, ResNet34_SharedOnly, DenseNet121, DenseNet121_SingleShared, ResNext50, ResNext50_SingleShared')
+parser.add_argument('--model', default="MobileNetV2_skip", help='MobileNetV2_skip')
 args = parser.parse_args()
 
-from models.cifar100 import resnet, densenet, resnext
-dic_model = {'ResNet18': resnet.ResNet18, 'ResNet34':resnet.ResNet34, 'ResNet34_SingleShared':resnet.ResNet34_SingleShared, 'ResNet34_NonShared':resnet.ResNet34_NonShared, 'ResNet34_SharedOnly':resnet.ResNet34_SharedOnly, 'DenseNet121':densenet.DenseNet121, 'DenseNet121_SingleShared':densenet.DenseNet121_SingleShared, 'ResNext50':resnext.ResNext50_32x4d, 'ResNext50_SingleShared':resnext.ResNext50_32x4d_SingleShared}
+from models.cifar100 import mobilenetv2_skip
+#from models.cifar100 import mobilenetv2_skip
+dic_model = {'MobileNetV2_skip': mobilenetv2_skip.MobileNetV2_skip}
     
 if args.model not in dic_model:
     print("The model is currently not supported")
@@ -41,29 +41,176 @@ if args.model not in dic_model:
 trainloader = utils.get_traindata('CIFAR100',args.dataset_path,batch_size=args.batch_size,download=True)
 testloader = utils.get_testdata('CIFAR100',args.dataset_path,batch_size=args.batch_size)
 
-#args.visible_device sets which cuda devices to be used
+#args.visible_device sets which cuda devices to be used"
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  
 os.environ["CUDA_VISIBLE_DEVICES"]=args.visible_device
 device='cuda'
 
-if 'SingleShared' in args.model:
-    net = dic_model[args.model](args.shared_rank, args.unique_rank)
-elif 'SharedOnly' in args.model:
-    net = dic_model[args.model](args.shared_rank)
-elif 'NonShared' in args.model:
-    net = dic_model[args.model](args.unique_rank)
-else:
-    net = dic_model[args.model]()
-    
+net = dic_model[args.model](num_classes=100)
 net = net.to(device)
                     
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
 
+# Kullback Leibler divergence loss
+criterion_kd = nn.KLDivLoss(reduction='batchmean')
+
 #Training for standard models
-def train(epoch):
+def train_alter_orig(epoch):    
     print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
     net.train()
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total = 0
+
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        alpha = 0.1 # 1.0 # 0.9
+        T = 4 #1 #4
+
+        # get this first...
+        # with torch.no_grad():
+        #     net.eval()
+        #     outputs_skip = net(inputs,skip=True)
+        
+        net.train()
+        optimizer.zero_grad()
+        
+        #alpha = 0.0 # 1.0 # 0.9
+        T = 4 #1 #4
+
+        # forward/backward for the full model
+        outputs = net(inputs,False)
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        
+        loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_skip.detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs_skip.detach()/T, dim=1), F.softmax(outputs.detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_old.detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_skip.detach()/T, dim=1)) 
+        loss_acc = criterion(outputs, targets) 
+        loss = loss_kd * alpha + loss_acc * (1. - alpha)
+        #loss = loss_acc
+
+        if (batch_idx == 0):
+            #print("accuracy_loss: %.6f" % loss)
+            print("kd acc loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss))
+            print(loss_kd.requires_grad)
+            # print(loss_acc.requires_grad)
+            # print(loss.requires_grad)
+        loss.backward()
+
+        alpha = 0.1 # 1.0 # 0.9
+        T = 4 #1 #4
+
+        # forward/backward for the skipped model
+        outputs_skip = net(inputs,skip=True)
+        _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.detach()/T, dim=1)) * T*T
+        #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.detach()/T, dim=1)) 
+        loss_skip_acc = criterion(outputs_skip, targets) 
+        loss_skip = loss_skip_kd * alpha + loss_skip_acc * (1. - alpha)
+
+        if (batch_idx == 0):
+            print("kd acc loss_skip: %.6f\t%.6f\t%.6f" % (loss_skip_kd, loss_skip_acc, loss_skip))
+            # print(loss_skip_kd.requires_grad)
+            # print(loss_skip_acc.requires_grad)
+            # print(loss_skip.requires_grad)
+        loss_skip.backward()
+
+
+
+        # update parameters
+        optimizer.step()
+    
+    acc_top1 = 100.*correct_top1/total
+    acc_top5 = 100.*correct_top5/total
+    
+    print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+
+#Training for standard models
+def train_alter(epoch):    
+    print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
+    net.train()
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total = 0
+
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        net.train()
+        optimizer.zero_grad()
+
+        # forward for the skipped model
+        outputs_skip = net(inputs,skip=True)
+        _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss_skip_acc = criterion(outputs_skip, targets) 
+
+        # forward for the full model
+        outputs = net(inputs,False)
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss_acc = criterion(outputs, targets) 
+
+        alpha_high = 0.0 #0.3
+        alpha_low = 0.0 # 0.9
+        T = 1
+
+        # student: low, teacher: high
+        loss_kd_low = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.clone().detach()/T, dim=1)) * T*T
+        
+        # student: high, teacher: low
+        loss_kd_high = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_skip.clone().detach()/T, dim=1)) * T*T
+
+        # total loss     
+        loss_high = loss_kd_high * alpha_high + loss_acc * (1. - alpha_high)
+        loss_low = loss_kd_low * alpha_low + loss_skip_acc * (1. - alpha_low)
+        loss = loss_high + loss_low     
+
+        if (batch_idx == 0):
+            print("kd_high acc loss_high: %.6f\t%.6f\t%.6f" % (loss_kd_high, loss_acc, loss_high))
+            print("kd_low acc_skip loss_low: %.6f\t%.6f\t%.6f" % (loss_kd_low, loss_skip_acc, loss_low))
+
+        loss.backward()
+
+
+
+        # update parameters
+        optimizer.step()
+    
+    acc_top1 = 100.*correct_top1/total
+    acc_top5 = 100.*correct_top5/total
+    
+    print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+
+#Training for standard models
+def train(epoch, skip=False):    
+    print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
+    #net.train()
     
     correct_top1 = 0
     correct_top5 = 0
@@ -73,7 +220,7 @@ def train(epoch):
         inputs, targets = inputs.to(device), targets.to(device)
     
         optimizer.zero_grad()
-        outputs = net(inputs)
+        outputs = net(inputs,skip)
         
         _, pred = outputs.topk(5, 1, largest=True, sorted=True)
 
@@ -87,87 +234,26 @@ def train(epoch):
         loss = criterion(outputs, targets)
         if (batch_idx == 0):
             print("accuracy_loss: %.6f" % loss)
+            #print(loss.requires_grad)
         loss.backward()
         optimizer.step()
-        
+    
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
-    
-    print("Training_Acc_Top1 = %.3f" % acc_top1)
-    print("Training_Acc_Top5 = %.3f" % acc_top5)
 
-def train_basis(epoch, skip=False):
-    print('\nCuda ' + args.visible_device + ' Basis Epoch: %d' % epoch)
-
-    correct_top1 = 0
-    correct_top5 = 0
-    total = 0
-    
-    for batch_idx, (inputs, targets) in enumerate(trainloader):
-        inputs, targets = inputs.to(device), targets.to(device)
-    
-        optimizer.zero_grad()
-        outputs = net(inputs, skip)
-
-        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
-
-        label_e = targets.view(targets.size(0), -1).expand_as(pred)
-        correct = pred.eq(label_e).float()
-
-        correct_top5 += correct[:, :5].sum()
-        correct_top1 += correct[:, :1].sum()        
-        total += targets.size(0)
-        
-        # get similarity of basis filters
-        cnt_sim = 0 
-        sim = 0
-        for gid in range(1, 5):  # all models have 4 groups
-            shared_basis = getattr(net,"shared_basis_"+str(gid))
-
-            num_shared_basis = shared_basis.weight.shape[0]
-            num_all_basis = num_shared_basis 
-
-            all_basis =(shared_basis.weight,)
-
-            B = torch.cat(all_basis).view(num_all_basis, -1)
-            #print("B size:", B.shape)
-
-            # compute orthogonalities btwn all baisis  
-            D = torch.mm(B, torch.t(B)) 
-
-            # make diagonal zeros
-            D = (D - torch.eye(num_all_basis, num_all_basis, device=device))**2
-            
-            sim += torch.sum(D[0:num_shared_basis,0:num_shared_basis])
-            cnt_sim += num_shared_basis**2
-
-        #average similarity
-        avg_sim = sim / cnt_sim
-
-        #acc loss
-        loss = criterion(outputs, targets)
-
-        if (batch_idx == 0):
-            print("accuracy_loss: %.6f" % loss)
-            print("similarity loss: %.6f" % avg_sim)
-
-        #apply similarity loss, multiplied by args.lambdaR
-        loss = loss + avg_sim * args.lambdaR
-        loss.backward()
-        optimizer.step()
-        
-    acc_top1 = 100.*correct_top1/total
-    acc_top5 = 100.*correct_top5/total
-    
-    if (skip==False):
-        print("Training_Acc_Top1 = %.3f" % acc_top1)
-        #print("Training_Acc_Top5 = %.3f" % acc_top5)
+    if skip==True:
+        print("[skip] Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
     else:
-        print("[Skip] Training_Acc_top1 = %.3f" % acc_top1)
-        #print("[Skip] Training_Acc_top5 = %.3f" % acc_top5)
-                                
-#Test for models
+        print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+    
 def test(epoch, skip=False, update_best=True):
+    """ Train roultine for SingleShared CIFAR10 models. 
+
+    Arguments:
+        skip: if True, skip some blocks
+        update_best: if True, update best_acc and save the model when a best model is found
+    """
     global best_acc
     global best_acc_top5
     net.eval()
@@ -193,11 +279,10 @@ def test(epoch, skip=False, update_best=True):
     # Save checkpoint.
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
-    print("Test_Acc_top1 = %.3f" % acc_top1)
-    #print("Test_Acc_top5 = %.3f" % acc_top5)
+    print("Test_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
 
-    if update_best==True and acc_top1 > best_acc:
-        #print('Saving..')
+    if update_best == True and acc_top1 > best_acc:
+        print('Saving..')
         state = {
             'net_state_dict': net.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -206,275 +291,161 @@ def test(epoch, skip=False, update_best=True):
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
+        torch.save(state, './checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
         best_acc = acc_top1
         best_acc_top5 = acc_top5
         print("Best_Acc_top1 = %.3f" % acc_top1)
         #print("Best_Acc_top5 = %.3f" % acc_top5)
 
-def freeze_highperf_model(net):
-    """ Freeze the high-performance model while enabling the training of the low-perf model. """
-    
-    # freeze params of only being used by the high-performance model
-    for i in range(1,5): # CIFAR100 layers. Skip the first layer
-        layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2.eval()
-        layer[num_skip_blocks-1].coeff_conv2.weight.requires_grad = False
-        for j in range(num_skip_blocks, len(layer)): # CIFAR100 blocks of the high-perf model
-            #print("layer: %s, block: %s" %(i, j))
-            layer[j].coeff_conv1.weight.requires_grad = False
-            layer[j].coeff_conv2.weight.requires_grad = False
-            layer[j].basis_bn1.eval()
-            layer[j].basis_bn2.eval()
-            layer[j].bn1.eval()
-            layer[j].bn2.eval()
-            if num_skip_blocks == 1: 
-            # if basis is not used by the low-perf model, it needs to be trained
-                layer[j].shared_basis.weight.requires_grad = False
-    # freeze params of high-perf FC layer
-    net.fc.weight.requires_grad = False
-    net.fc.bias.requires_grad = False
 
-def freeze_lowperf_model(net):
-    """ Freeze parts of low-performance model while enabling the training of high-perf model """
-    for i in range(1,5): # Layers. Skip the first layer
-        layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2_skip.eval()
-        layer[num_skip_blocks-1].coeff_conv2_skip.weight.requires_grad = False
-    # freeze params of low-perf FC layer
-    net.fc_skip.weight.requires_grad = False
-    net.fc_skip.bias.requires_grad = False
+def adjust_learning_rate(optimizer, epoch, args_lr):
+    lr = args_lr
+    if epoch > 150:
+        lr = lr * 0.1
+    if epoch > 225:
+        lr = lr * 0.1
+        #alpha_h = 0.0  # early stopping of distillation
 
-def freeze_lowperf_model_all(net):
-    """ Freeze the low-performance model while enabling the training of high-perf model """
-
-    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
-    for module in net.modules():
-        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
-            module.eval()
-
-    # freeze all parameters
-    for param in net.parameters():
-        param.requires_grad = False
-
-    # defreeze params of only being used by the high-performance model
-    for i in range(1,5): # Layers. Skip the first layer
-        layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        for j in range(num_skip_blocks, len(layer)): # blocks. 
-            layer[j].coeff_conv1.weight.requires_grad = True
-            layer[j].coeff_conv2.weight.requires_grad = True
-            layer[j].basis_bn1.train()
-            layer[j].basis_bn2.train()
-            layer[j].bn1.train()
-            layer[j].bn2.train()
-            if num_skip_blocks == 1: 
-            # basis is used only for high-perf models. Hence needs retraining.
-                layer[j].shared_basis.weight.requires_grad = True
-
-    # defreeze params of high-perf FC layer
-    net.fc.weight.requires_grad = True
-    net.fc.bias.requires_grad = True  
-
-def freeze_all_but_lowperf_fc(net):
-    """ Used to freeze all parameters except 'bn2_skip' and 'fc_skip' layers. """
-    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
-    for module in net.modules():
-        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
-            module.eval()
-    
-    # freeze all parameters
-    for param in net.parameters():
-        param.requires_grad = False
-    
-    # make intermediate BNs trainable
-    for i in range(1,5):
-        layer = getattr(net, "layer"+str(i))
-        n_skip = round(len(layer)/2) 
-        layer[n_skip-1].coeff_conv2_skip.weight.requires_grad=True
-        layer[n_skip-1].bn2_skip.train()
-        for param in layer[n_skip-1].bn2_skip.parameters():
-            param.requires_grad = True
-        
-    net.fc_skip.weight.requires_grad = True
-    net.fc_skip.bias.requires_grad = True
-
-def defreeze_model(net):
-    """ Defreeze all parameters and enable training. Must be called to enable training. """
-    # defreeze all parameters
-    for param in net.parameters():
-        param.requires_grad = True
-    # make the whole network trainable
-    net.train()
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 
 best_acc = 0
 best_acc_top5 = 0
 
-func_train = train
-if 'SingleShared' in args.model or 'SharedOnly' in args.model:
-    func_train = train_basis
-
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
-    net.load_state_dict(checkpoint['net_state_dict'])
+    net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-
-print('\n######### Alternate Training Low- and High-Performance Model ###########\n')
-
-train_epochs = (200,100,100,30,30)
-base_epoch = [1,]
-for i in range(1, len(train_epochs)):
-    base_epoch.append(base_epoch[i-1]+train_epochs[i-1])
-
-# =========== phase #1 ===============
-
+#'''
 net.train()
-for i in range(args.starting_epoch, train_epochs[0]):
-    if (randint(0,2) == 0): # give more chance to high-perf model
-        skip = True
-        freeze_highperf_model(net)
-    else:
-        skip = False
-        freeze_lowperf_model(net)
+for i in range(args.starting_epoch, 300):
+    start = timeit.default_timer()
+    
+    adjust_learning_rate(optimizer, i+1, args.lr)
+    
+    #train(i+1,skip=False)
+    train_alter(i+1)
+    
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True)
+    test(i+1, skip=False)
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+
+# save & load a best performing model
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+#'''
+
+#'''
+## finetuning low perf
+
+args.lr = 0.01
+#args.weight_decay = 5e-4
+
+best_acc = 0
+best_acc_top5 = 0
+for i in range(args.starting_epoch, 30):
+    net.freeze_highperf()
+    #freeze_all_but_lowperf_fc(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
     start = timeit.default_timer()
-    func_train(base_epoch[0]+i, skip)
+
+    train(i+1, skip=True)
+
     stop = timeit.default_timer()
-    test(base_epoch[0]+i, skip=True)
-    test(base_epoch[0]+i, skip=False)
-    defreeze_model(net)
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-
-
-# =========== phase #2 ===============
     
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
 
-net.train()
-for i in range(args.starting_epoch, train_epochs[1]):
-    if (randint(0,2) == 0):
-        skip = True
-        freeze_highperf_model(net)
-    else:
-        skip = False
-        freeze_lowperf_model(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
-    start = timeit.default_timer()
-    func_train(base_epoch[1]+i, skip)
-    stop = timeit.default_timer()
-    test(base_epoch[1]+i, skip=True)
-    test(base_epoch[1]+i, skip=False)
-    
-    defreeze_model(net)
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-    
+    net.defreeze_model()
+    #defreeze_model(net)
+        
+    print('Time: {:.3f}'.format(stop - start))
 
-# =========== phase #3 ===============
-    
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase2-' + args.visible_device + '.pth')
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
-# Reset to get a best low-perf model
-best_acc = 0
-best_acc_top5 = 0
-
-net.train()
-for i in range(args.starting_epoch, train_epochs[2]):
-    if (randint(0,2) == 0):    
-        skip = True
-        freeze_highperf_model(net)
-    else:
-        skip = False
-        freeze_lowperf_model(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
-    start = timeit.default_timer()
-    func_train(base_epoch[2]+i, skip)
-    test(base_epoch[2]+i, skip=True, update_best=False)
-    test(base_epoch[2]+i, skip=False)  # save only high-perf best
-    stop = timeit.default_timer()
-    defreeze_model(net)
-    print('skip:', skip)
-    print('Time: {:.3f}'.format(stop - start))  
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-# save the model with the best performance. 
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase3-' + args.visible_device + '.pth')
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-print('\n######### Finetuning Low-Performance Model ###########\n')
-
-best_acc = 0
-best_acc_top5 = 0
-
-net.train()
-for i in range(args.starting_epoch, train_epochs[3]):
+for i in range(args.starting_epoch, 20):
+    net.freeze_highperf()
     freeze_all_but_lowperf_fc(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
     start = timeit.default_timer()
-    func_train(1+i, skip=True)
+
+    train(i+1, skip=True)
+
     stop = timeit.default_timer()
-    test(base_epoch[3]+i, skip=True)
-    test(base_epoch[3]+i, skip=False, update_best=False)  
-    defreeze_model(net)
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
 
-    print('Time: {:.3f}'.format(stop - start))  
-
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase4-' + args.visible_device + '.pth')
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
 
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+#'''
 
-
-print('\n######### Finetuning High-Performance Model ###########\n')
-
+#'''
+## finetuning high perf
 best_acc = 0
 best_acc_top5 = 0
+args.lr=0.01
+print('hello')
+for i in range(args.starting_epoch, 30):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-net.train()
-for i in range(args.starting_epoch, train_epochs[4]):
-    freeze_lowperf_model_all(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
     start = timeit.default_timer()
-    func_train(1+i, skip=False)
+
+    train(i+1, skip=False)
+
     stop = timeit.default_timer()
-    test(base_epoch[3]+i, skip=True, update_best=False)
-    test(base_epoch[3]+i, skip=False)  
-    defreeze_model(net)
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
 
-    print('Time: {:.3f}'.format(stop - start))  
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
 
-checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-S" + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'])
-best_acc = checkpoint['acc']
-torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-S" \
-    + str(args.shared_rank) + "-U" + str(args.unique_rank) + "-L" + str(args.lambdaR) + "-" \
-    + 'phase5-' + args.visible_device + '.pth')
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, 20):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
+#'''
