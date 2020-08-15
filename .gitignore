@@ -1,6 +1,8 @@
 checkpoint/
 data/
 __pycache__/
+log/
+obsolete/
 tee
 *.log
 *.pth

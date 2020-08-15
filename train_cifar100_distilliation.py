@@ -30,23 +30,31 @@ parser.add_argument('--dataset_path', default="./data/", help='A path to dataset
 parser.add_argument('--model', default="MobileNetV2_skip", help='MobileNetV2_skip')
 args = parser.parse_args()
 
-from models.cifar10 import mobilenetv2_skip
+from models.cifar100 import mobilenetv2_skip
+#from models.cifar100 import mobilenetv2_skip
 dic_model = {'MobileNetV2_skip': mobilenetv2_skip.MobileNetV2_skip}
     
 if args.model not in dic_model:
     print("The model is currently not supported")
     sys.exit()
 
-trainloader = utils.get_traindata('CIFAR10',args.dataset_path,batch_size=args.batch_size,download=True)
-testloader = utils.get_testdata('CIFAR10',args.dataset_path,batch_size=args.batch_size)
+trainloader = utils.get_traindata('CIFAR100',args.dataset_path,batch_size=args.batch_size,download=True)
+testloader = utils.get_testdata('CIFAR100',args.dataset_path,batch_size=args.batch_size)
 
 #args.visible_device sets which cuda devices to be used"
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  
 os.environ["CUDA_VISIBLE_DEVICES"]=args.visible_device
 device='cuda'
 
-net = dic_model[args.model]()
+net = dic_model[args.model](num_classes=100)
 net = net.to(device)
+
+#load teacher network
+net_teacher = dic_model[args.model](num_classes=100)
+net_teacher = net_teacher.to(device)
+teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
+checkpoint = torch.load(teacher_pretrained)
+net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
                     
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
@@ -64,15 +72,25 @@ def train_alter(epoch):
     correct_top5 = 0
     total = 0
     
-    alpha = 0.9
-    T = 4
-
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
 
+        # get this first...
+        # with torch.no_grad():
+        #     net.eval()
+        #     outputs_skip = net(inputs,skip=True)
+
+        
+        net.train()
         optimizer.zero_grad()
 
-        # forward/backward for the full model
+        with torch.no_grad():
+            net_teacher.eval()
+            outputs_teacher = net_teacher(inputs, skip=False)
+
+        alpha = 0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 4
+        # forward for the full model
         outputs = net(inputs,False)
         _, pred = outputs.topk(5, 1, largest=True, sorted=True)
         label_e = targets.view(targets.size(0), -1).expand_as(pred)
@@ -80,11 +98,14 @@ def train_alter(epoch):
         correct_top5 += correct[:, :5].sum()
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
-        loss = criterion(outputs, targets)
-        if (batch_idx == 0):
-            print("accuracy_loss: %.6f" % loss)
+        loss_acc = criterion(outputs, targets) 
+        loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+        loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
+
+        alpha = 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
+        T = 4 #1 #4
         # forward/backward for the skipped model
         outputs_skip = net(inputs,skip=True)
         _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
@@ -93,10 +114,19 @@ def train_alter(epoch):
         correct_top5 += correct[:, :5].sum()
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
-        loss_skip = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.detach()/T, dim=1)) * (alpha *T*T) +\
-                    criterion(outputs_skip, targets) * (1. - alpha)
+        # learn from an external teacher
+        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_teacher.detach()/T, dim=1)) * T*T
+        #learn from an internal teacher
+        #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.clone().detach()/T, dim=1)) * T*T
+        loss_skip_acc = criterion(outputs_skip, targets) 
+        loss_skip = loss_skip_kd * alpha + loss_skip_acc * (1. - alpha)
+
         if (batch_idx == 0):
-            print("KD_loss: %.6f" % loss_skip)
+            print("kd acc loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss))
+            print("kd_skip acc_skip loss_skip: %.6f\t%.6f\t%.6f" % (loss_skip_kd, loss_skip_acc, loss_skip))
+            # print(loss_skip_kd.requires_grad)
+            # print(loss_skip_acc.requires_grad)
+            # print(loss_skip.requires_grad)
         loss_skip.backward()
 
         # update parameters
@@ -135,12 +165,13 @@ def train(epoch, skip=False):
         loss = criterion(outputs, targets)
         if (batch_idx == 0):
             print("accuracy_loss: %.6f" % loss)
+            print(loss.requires_grad)
         loss.backward()
         optimizer.step()
     
     acc_top1 = 100.*correct_top1/total
     acc_top5 = 100.*correct_top5/total
-    
+
     if skip==True:
         print("[skip] Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
     else:
@@ -182,7 +213,7 @@ def test(epoch, skip=False, update_best=True):
     print("Test_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
 
     if update_best == True and acc_top1 > best_acc:
-        #print('Saving..')
+        print('Saving..')
         state = {
             'net_state_dict': net.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -191,122 +222,23 @@ def test(epoch, skip=False, update_best=True):
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/' + 'CIFAR10-' + args.model + "-" + args.visible_device + '.pth')
+        torch.save(state, './checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
         best_acc = acc_top1
         best_acc_top5 = acc_top5
         print("Best_Acc_top1 = %.3f" % acc_top1)
         #print("Best_Acc_top5 = %.3f" % acc_top5)
 
 
-def freeze_highperf_model(net):
-    """ Freeze the high-performance model while enabling the training of the low-perf model. """
-    
-    # freeze params of only being used by the high-performance model
-    for i, i_base in enumerate(net.skip_layers):
-        net.layers[i_base].conv3.weight.requires_grad = False
-        net.layers[i_base].bn3.eval()
-        for j in range(net.skip_distance[i]):
-            for param in net.layers[i_base+1+j].parameters():
-                param.requires_grad = False
-            net.layers[i_base+1+j].eval()
-
-    # freeze params of high-perf FC layer
-    net.linear.weight.requires_grad = False
-    net.linear.bias.requires_grad = False
-
-def freeze_lowperf_model(net):
-    """ Freeze parts of low-performance model while enabling the training of high-perf model """
-    for i, i_base in enumerate(net.skip_layers):
-        net.layers[i_base].conv3_skip.weight.requires_grad = False
-        net.layers[i_base].bn3_skip.eval()
-    # freeze params of high-perf FC layer
-    net.linear_skip.weight.requires_grad = False
-    net.linear_skip.bias.requires_grad = False
-
-
-def freeze_lowperf_model_all(net):
-    """ Freeze the low-performance model while enabling the training of high-perf model """
-
-    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
-    for module in net.modules():
-        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
-            module.eval()
-
-    # freeze all parameters
-    for param in net.parameters():
-        param.requires_grad = False
-
-    # defreeze params of only being used by the high-performance model
-    for i, i_base in enumerate(net.skip_layers):
-        net.layers[i_base].conv3.weight.requires_grad = True
-        net.layers[i_base].bn3.train()
-        for j in range(net.skip_distance[i]):
-            for param in net.layers[i_base+1+j].parameters():
-                param.requires_grad = True
-            net.layers[i_base+1+j].train()
-
-    # defreeze params of high-perf FC layer
-    net.linear.weight.requires_grad = True
-    net.linear.bias.requires_grad = True
-
-def freeze_all_but_lowperf_fc(net):
-    """ Used to freeze all parameters except 'bn2_skip' and 'fc_skip' layers. """
-    # bn layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
-    for module in net.modules():
-        if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
-            module.eval()
-    
-    # freeze all parameters
-    for param in net.parameters():
-        param.requires_grad = False
-    
-    for i, i_base in enumerate(net.skip_layers):
-        net.layers[i_base].conv3_skip.weight.requires_grad = True
-        net.layers[i_base].bn3_skip.train()
-
-    # defreeze params of high-perf FC layer
-    net.linear_skip.weight.requires_grad = True
-    net.linear_skip.bias.requires_grad = True
-
-def defreeze_model(net):
-    """ Defreeze all parameters and enable training. Must be called to enable training. """
-    # defreeze all parameters
-    for param in net.parameters():
-        param.requires_grad = True
-    # make the whole network trainable
-    net.train()
-
-
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
     if epoch > 150:
         lr = lr * 0.1
-    if epoch > 250:
+    if epoch > 225:
         lr = lr * 0.1
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def adjust_learning_rate_long(optimizer, epoch, args_lr):
-    # cifar10 requires particularlly long training epoches.
-    lr = args_lr
-    if epoch > 250:
-        lr = lr * 0.1
-    if epoch > 375: 
-        lr = lr * 0.1
-
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-def adjust_learning_rate_finetune(optimizer, epoch, args_lr):
-    lr = args_lr
-    if epoch > 50:
-        lr = lr * 0.1
-    if epoch > 100:
-        lr = lr * 0.1
-
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
 
 best_acc = 0
 best_acc_top5 = 0
@@ -316,20 +248,17 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-
+#'''
 net.train()
-for i in range(args.starting_epoch, 350):
-    #optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    
+for i in range(args.starting_epoch, 300):
     start = timeit.default_timer()
     
     adjust_learning_rate(optimizer, i+1, args.lr)
     
-    net.train()
+    #train(i+1,skip=True)
     train_alter(i+1)
-    #train(i+1, skip=False)
     
     stop = timeit.default_timer()
     
@@ -341,27 +270,111 @@ for i in range(args.starting_epoch, 350):
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
 
-'''
-## finetuning
-best_acc = 92.61
+# save & load a best performing model
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+#'''
+
+#'''
+## finetuning low perf
+
+args.lr = 0.01
+#args.weight_decay = 5e-4
+
+best_acc = 0
 best_acc_top5 = 0
-net.train()
 for i in range(args.starting_epoch, 30):
+    net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
-    freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     start = timeit.default_timer()
-    #adjust_learning_rate(optimizer, i+1, args.lr)
-    func_train(i+1, skip=False)
+
+    train(i+1, skip=True)
+
     stop = timeit.default_timer()
     
-    test(i+1, skip=True, update_best=False)
-    test(i+1, skip=False)
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
+
+    net.defreeze_model()
+    #defreeze_model(net)
         
-    defreeze_model(net)
+    print('Time: {:.3f}'.format(stop - start))
+
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, 20):
+    net.freeze_highperf()
+    #freeze_all_but_lowperf_fc(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=True)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
+
+    net.defreeze_model()
+        
     print('Time: {:.3f}'.format(stop - start))
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
-'''
+#'''
+
+#'''
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+
+## finetuning high perf
+best_acc = 0
+best_acc_top5 = 0
+for i in range(args.starting_epoch, 30):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, 20):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+#'''

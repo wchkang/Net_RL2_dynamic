@@ -115,6 +115,7 @@ class MobileNetV2_skip(nn.Module):
             for i in self.basic_layers:
                 #print(i)
                 out = self.layers[i](out, skip=True)
+                #print(out.shape)
         else:
             out = self.layers(out)
         out = F.relu(self.bn2(self.conv2(out)))
@@ -122,17 +123,74 @@ class MobileNetV2_skip(nn.Module):
         # NOTE: change pooling kernel_size 7 -> 4 for CIFAR10
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        if (skip == True):
-           out = self.linear_skip(out)
-        else:
-           out = self.linear(out)
+        # if (skip == True):
+        #    out = self.linear_skip(out)
+        # else:
+        #    out = self.linear(out)
+        #print(out.shape)
+        out = self.linear(out)
         return out
 
 
+    def freeze_model(self):
+        """ freeze all layers and BNs """
+        # BN layers need to be freezed explicitly since they cannot be freezed via '.requires_grad=False'
+        for module in self.modules():
+            if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+                module.eval()
+        
+        # freeze all parameters
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def defreeze_model(self):
+        """ Defreeze all parameters and enable training. . """
+        # defreeze all parameters
+        for param in net.parameters():
+            param.requires_grad = True
+        # make the whole network trainable
+        self.train()
+
+    def freeze_highperf(self):
+        """ freeze high-performace-exclusive layers """
+        
+        self.freeze_model()
+
+        # defreeze low-perf-exclusive parameters and BNs
+        for i, i_base in enumerate(self.skip_layers):
+            self.layers[i_base].conv3_skip.weight.requires_grad = True
+            self.layers[i_base].bn3_skip.train()
+
+        # defreeze params of low-perf FC layer
+        #self.linear_skip.weight.requires_grad = True
+        #self.linear_skip.bias.requires_grad = True
+        #self.linear_skip.train()
+
+    def freeze_lowperf(self):
+        """ Freeze low-performance-exclusive layers """
+        
+        self.freeze_model()
+
+        # defreeze params of only being used by the high-performance model
+        for i, i_base in enumerate(self.skip_layers):
+            self.layers[i_base].conv3.weight.requires_grad = True
+            self.layers[i_base].bn3.train()
+            for j in range(self.skip_distance[i]):
+                for param in self.layers[i_base+1+j].parameters():
+                    param.requires_grad = True
+                self.layers[i_base+1+j].train()
+
+        # defreeze params of high-perf FC layer
+        #self.linear.weight.requires_grad = True
+        #self.linear.bias.requires_grad = True
+        #self.linear.train()
+
+
 def test():
-    net = MobileNetV2_skip()
-    x = torch.randn(2,3,32,32)
+    net = MobileNetV2_skip(num_classes=1000)
+    x = torch.randn(256,3,32,32)
     y = net(x)
     print(y.size())
+    #print(net)
 
-# test()
+#test()
