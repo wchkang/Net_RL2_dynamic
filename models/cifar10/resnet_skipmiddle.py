@@ -456,11 +456,15 @@ class SkippableSequential(nn.Sequential):
     """ Skip some blocks if requested. """
     def forward(self, input, skip=False):
         if skip == True:
-            n_skip = round(len(self)/2) 
-            for i in range(0, n_skip -1):   # execute first-half blocks 
+            # execute first 2 blocks
+            input = self[0](input)    
+            input = self[1](input, skip=True)
+
+            n_skip = len(self)//2 
+
+            # skip the middle layers
+            for i in range(2+n_skip, len(self)):
                 input = self[i](input)
-            
-            input = self[n_skip-1](input,skip=True)  # execute the last block of the low-perf model.
         else:
             for b in self:  # execute all blocks
                 input = b(input)
@@ -592,12 +596,12 @@ class ResNet_DoubleShared(nn.Module):
         layers.append(block_original(self.in_planes, planes, stride))
         
         self.in_planes = planes * block_original.expansion
-        n_skip = round(blocks/2)
-        for i in range(1, n_skip -1):  
-            layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=False))
-        # Only this block needs to have params for skipping
+
+        # second layer is skippable
         layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=True))
-        for _ in range(n_skip, blocks):
+
+        n_skip = blocks//2
+        for _ in range(2, blocks):
             layers.append(block_basis(self.in_planes, planes, unique_rank, shared_basis_1, shared_basis_2, skippable=False))
 
         return SkippableSequential(*layers)

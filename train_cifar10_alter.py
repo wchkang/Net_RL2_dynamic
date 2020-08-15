@@ -30,8 +30,9 @@ parser.add_argument('--dataset_path', default="./data/", help='A path to dataset
 parser.add_argument('--model', default="ResNet56_DoubleShared", help='ResNet20, ResNet32, ResNet44, ResNet56, ResNet110, ResNet1202, ResNet56_DoubleShared, ResNet32_DoubleShared, ResNet56_SingleShared, ResNet32_SingleShared, ResNet56_SharedOnly, ResNet32_SharedOnly, ResNet56_NonShared, ResNet32_NonShared')
 args = parser.parse_args()
 
-from models.cifar10 import resnet
-dic_model = {'ResNet20': resnet.ResNet20, 'ResNet32':resnet.ResNet32,'ResNet44':resnet.ResNet44,'ResNet56':resnet.ResNet56, 'ResNet110':resnet.ResNet110, 'ResNet1202':resnet.ResNet1202, 'ResNet56_DoubleShared':resnet.ResNet56_DoubleShared, 'ResNet32_DoubleShared':resnet.ResNet32_DoubleShared, 'ResNet56_SingleShared':resnet.ResNet56_SingleShared, 'ResNet32_SingleShared':resnet.ResNet32_SingleShared, 'ResNet56_SharedOnly':resnet.ResNet56_SharedOnly, 'ResNet32_SharedOnly':resnet.ResNet32_SharedOnly, 'ResNet56_NonShared':resnet.ResNet56_NonShared, 'ResNet32_NonShared':resnet.ResNet32_NonShared}
+#from models.cifar10 import resnet_alter
+from models.cifar10 import resnet_skipmiddle
+dic_model = {'ResNet56_DoubleShared':resnet_skipmiddle.ResNet56_DoubleShared, 'ResNet32_DoubleShared':resnet_skipmiddle.ResNet32_DoubleShared}
     
 if args.model not in dic_model:
     print("The model is currently not supported")
@@ -113,84 +114,87 @@ def train_basis(epoch, skip=False, include_unique_basis=True):
         inputs, targets = inputs.to(device), targets.to(device)
     
         optimizer.zero_grad()
-        
+        '''
         if (randint(0,2) == 0): # give more chance to high-perf model
             skip = True
         else:
             skip = False    
-        
-        outputs = net(inputs, skip=skip)
-           
-        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
-
-        label_e = targets.view(targets.size(0), -1).expand_as(pred)
-        correct = pred.eq(label_e).float()
-
-        correct_top5 += correct[:, :5].sum()
-        correct_top1 += correct[:, :1].sum()        
-        total += targets.size(0)
-        
-        # get similarity of basis filters
-        cnt_sim = 0 
-        sim = 0
-        for gid in range(1, 4):  # ResNet for CIFAR10 has 3 groups
-            layer = getattr(net, "layer"+str(gid))
-            shared_basis_1 = getattr(net,"shared_basis_"+str(gid)+"_1")
-            shared_basis_2 = getattr(net,"shared_basis_"+str(gid)+"_2")
-
-            num_shared_basis = shared_basis_2.weight.shape[0] + shared_basis_1.weight.shape[0]
-            num_all_basis = num_shared_basis 
-
-            all_basis =(shared_basis_1.weight, shared_basis_2.weight, )
-            if (include_unique_basis == True):  
-                num_unique_basis = layer[1].basis_conv1.weight.shape[0] 
-                num_all_basis += (num_unique_basis * 2 * (len(layer) -1))
-                for i in range(1, len(layer)):
-                    all_basis += (layer[i].basis_conv1.weight, layer[i].basis_conv2.weight,)
-
-            B = torch.cat(all_basis).view(num_all_basis, -1)
-            #print("B size:", B.shape)
-
-            # compute orthogonalities btwn all baisis  
-            D = torch.mm(B, torch.t(B)) 
-
-            # make diagonal zeros
-            D = (D - torch.eye(num_all_basis, num_all_basis, device=device))**2
+        '''
+        for skip in (True, False):
+        #for i in range(1):
+            outputs = net(inputs, skip=skip)
             
-            #print("D size:", D.shape)
-           
-            if (include_unique_basis == True):  
-                # orthogonalities btwn shared<->(shared/unique)
-                sim += torch.sum(D[0:num_shared_basis,:])  
-                cnt_sim += num_shared_basis*num_all_basis
+            _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+
+            label_e = targets.view(targets.size(0), -1).expand_as(pred)
+            correct = pred.eq(label_e).float()
+
+            correct_top5 += correct[:, :5].sum()
+            correct_top1 += correct[:, :1].sum()        
+            total += targets.size(0)
+            
+            # get similarity of basis filters
+            cnt_sim = 0 
+            sim = 0
+            for gid in range(1, 4):  # ResNet for CIFAR10 has 3 groups
+                layer = getattr(net, "layer"+str(gid))
+                shared_basis_1 = getattr(net,"shared_basis_"+str(gid)+"_1")
+                shared_basis_2 = getattr(net,"shared_basis_"+str(gid)+"_2")
+
+                num_shared_basis = shared_basis_2.weight.shape[0] + shared_basis_1.weight.shape[0]
+                num_all_basis = num_shared_basis 
+
+                all_basis =(shared_basis_1.weight, shared_basis_2.weight, )
+                if (include_unique_basis == True):  
+                    num_unique_basis = layer[1].basis_conv1.weight.shape[0] 
+                    num_all_basis += (num_unique_basis * 2 * (len(layer) -1))
+                    for i in range(1, len(layer)):
+                        all_basis += (layer[i].basis_conv1.weight, layer[i].basis_conv2.weight,)
+
+                B = torch.cat(all_basis).view(num_all_basis, -1)
+                #print("B size:", B.shape)
+
+                # compute orthogonalities btwn all baisis  
+                D = torch.mm(B, torch.t(B)) 
+
+                # make diagonal zeros
+                D = (D - torch.eye(num_all_basis, num_all_basis, device=device))**2
                 
-                # orthogonalities btwn unique<->unique in the same layer
-                for i in range(1, len(layer)):
-                    for j in range(2):  # conv1 & conv2
-                         idx_base = num_shared_basis   \
-                          + (i-1) * (num_unique_basis) * 2 \
-                          + num_unique_basis * j 
-                         sim += torch.sum(\
-                                 D[idx_base:idx_base + num_unique_basis, \
-                                 idx_base:idx_base+num_unique_basis])
-                         cnt_sim += num_unique_basis ** 2 
-            else: # orthogonalities only btwn shared basis
-                sim += torch.sum(D[0:num_shared_basis,0:num_shared_basis])
-                cnt_sim += num_shared_basis**2
-        
-        #average similarity
-        avg_sim = sim / cnt_sim
+                #print("D size:", D.shape)
+            
+                if (include_unique_basis == True):  
+                    # orthogonalities btwn shared<->(shared/unique)
+                    sim += torch.sum(D[0:num_shared_basis,:])  
+                    cnt_sim += num_shared_basis*num_all_basis
+                    
+                    # orthogonalities btwn unique<->unique in the same layer
+                    for i in range(1, len(layer)):
+                        for j in range(2):  # conv1 & conv2
+                            idx_base = num_shared_basis   \
+                            + (i-1) * (num_unique_basis) * 2 \
+                            + num_unique_basis * j 
+                            sim += torch.sum(\
+                                    D[idx_base:idx_base + num_unique_basis, \
+                                    idx_base:idx_base+num_unique_basis])
+                            cnt_sim += num_unique_basis ** 2 
+                else: # orthogonalities only btwn shared basis
+                    sim += torch.sum(D[0:num_shared_basis,0:num_shared_basis])
+                    cnt_sim += num_shared_basis**2
+            
+            #average similarity
+            avg_sim = sim / cnt_sim
 
-        #acc loss
-        loss = criterion(outputs, targets)
+            #acc loss
+            loss = criterion(outputs, targets)
 
-        if (batch_idx == 0):
-            print("accuracy_loss: %.6f" % loss)
-            print("similarity loss: %.6f" % avg_sim)
+            if (batch_idx == 0):
+                print("accuracy_loss: %.6f" % loss)
+                print("similarity loss: %.6f" % avg_sim)
 
-        #apply similarity loss, multiplied by args.lambdaR
-        loss = loss + avg_sim * args.lambdaR
-        loss.backward()
+            #apply similarity loss, multiplied by args.lambdaR
+            loss = loss + avg_sim * args.lambdaR
+            loss.backward()
+        # update params after taking both skip/no-skip paths            
         optimizer.step()
         
     acc_top1 = 100.*correct_top1/total
@@ -429,10 +433,11 @@ def freeze_highperf_model(net):
     # freeze params of only being used by the high-performance model
     for i in range(1,4): # CIFAR10 layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2.eval()
-        layer[num_skip_blocks-1].coeff_conv2.weight.requires_grad = False
-        for j in range(num_skip_blocks, len(layer)): # CIFAR10 blocks of the high-perf model
+        #num_skip_blocks = round(len(layer)/2)
+        num_skip_blocks = len(layer)//2
+        layer[1].bn2.eval()
+        layer[1].coeff_conv2.weight.requires_grad = False
+        for j in range(2, 2+num_skip_blocks): # CIFAR10 blocks of the high-perf model
             #print("layer: %s, block: %s" %(i, j))
             layer[j].coeff_conv1.weight.requires_grad = False
             layer[j].coeff_conv2.weight.requires_grad = False
@@ -440,10 +445,6 @@ def freeze_highperf_model(net):
             layer[j].basis_bn2.eval()
             layer[j].bn1.eval()
             layer[j].bn2.eval()
-            if num_skip_blocks == 1: 
-            # if basis is not used by the low-perf model, it needs to be trained
-                layer[j].shared_basis1_1.weight.requires_grad = False
-                layer[j].shared_basis1_2.weight.requires_grad = False
     # freeze params of high-perf FC layer
     net.fc.weight.requires_grad = False
     net.fc.bias.requires_grad = False
@@ -452,9 +453,8 @@ def freeze_lowperf_model(net):
     """ Freeze parts of low-performance model while enabling the training of high-perf model """
     for i in range(1,4): # Layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        layer[num_skip_blocks-1].bn2_skip.eval()
-        layer[num_skip_blocks-1].coeff_conv2_skip.weight.requires_grad = False
+        layer[1].bn2_skip.eval()
+        layer[1].coeff_conv2_skip.weight.requires_grad = False
     # freeze params of low-perf FC layer
     net.fc_skip.weight.requires_grad = False
     net.fc_skip.bias.requires_grad = False
@@ -474,18 +474,14 @@ def freeze_lowperf_model_all(net):
     # defreeze params of only being used by the high-performance model
     for i in range(1,4): # Layers. Skip the first layer
         layer = getattr(net,"layer"+str(i))
-        num_skip_blocks = round(len(layer)/2)
-        for j in range(num_skip_blocks, len(layer)): # blocks. 
+        num_skip_blocks = len(layer)//2
+        for j in range(2, 2+num_skip_blocks): # blocks. 
             layer[j].coeff_conv1.weight.requires_grad = True
             layer[j].coeff_conv2.weight.requires_grad = True
             layer[j].basis_bn1.train()
             layer[j].basis_bn2.train()
             layer[j].bn1.train()
             layer[j].bn2.train()
-            if num_skip_blocks == 1: 
-            # basis is used only for high-perf models. Hence needs retraining.
-                layer[j].shared_basis_1_1.weight.requires_grad = True
-                layer[j].shared_basis_1_2.weight.requires_grad = True
     # defreeze params of high-perf FC layer
     net.fc.weight.requires_grad = True
     net.fc.bias.requires_grad = True  
@@ -504,10 +500,9 @@ def freeze_all_but_lowperf_fc(net):
     # make intermediate BNs trainable
     for i in range(1,4):
         layer = getattr(net, "layer"+str(i))
-        n_skip = round(len(layer)/2) 
-        layer[n_skip-1].coeff_conv2_skip.weight.requires_grad=True
-        layer[n_skip-1].bn2_skip.train()
-        for param in layer[n_skip-1].bn2_skip.parameters():
+        layer[1].coeff_conv2_skip.weight.requires_grad=True
+        layer[1].bn2_skip.train()
+        for param in layer[1].bn2_skip.parameters():
             param.requires_grad = True
         
     net.fc_skip.weight.requires_grad = True
@@ -569,12 +564,12 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
 net.train()
-
 for i in range(args.starting_epoch, 500):
+#for i in range(args.starting_epoch, 300):
     # if (randint(0,2) == 0): # give more chance to high-perf model
     #     skip = True
     #     freeze_highperf_model(net)
@@ -610,7 +605,7 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 best_acc = 0
 best_acc_top5 = 0
 net.train()
-for i in range(args.starting_epoch, 30):
+for i in range(args.starting_epoch, 5):
     freeze_all_but_lowperf_fc(net)
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.01, momentum=args.momentum, weight_decay=args.weight_decay)
