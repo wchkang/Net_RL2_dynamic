@@ -30,6 +30,7 @@ parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES'
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
 parser.add_argument('--dataset_path', default="./data/", help='A path to dataset directory')
+parser.add_argument('--checkpoint_path', default="./checkpoint/", help='checkpoint path')
 parser.add_argument('--model', default="MobileNetV2_skip", help='MobileNetV2_skip')
 args = parser.parse_args()
 
@@ -221,9 +222,9 @@ def test(epoch, skip=False, update_best=True):
                 'acc': acc_top1,
                 'epoch': epoch,
             }
-            if not os.path.isdir('checkpoint'):
-                os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+            if not os.path.isdir(args.checkpoint_path):
+                os.mkdir(args.checkpoint_path)
+            torch.save(state, args.checkpoint_path + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
             best_acc = acc_top1
             best_acc_top5 = acc_top5
             print("Best_Acc_top1/5 = %.3f\t%.3f" % (best_acc, best_acc_top5))
@@ -235,9 +236,9 @@ def test(epoch, skip=False, update_best=True):
                 'acc': acc_top1,
                 'epoch': epoch,
             }
-            if not os.path.isdir('checkpoint'):
-                os.mkdir('checkpoint')
-            torch.save(state, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-epoch-' + str(epoch) + '.pth')
+            if not os.path.isdir(args.checkpoint_path):
+                os.mkdir(args.checkpoint_path)
+            torch.save(state, args.checkpoint_path + 'ILSVRC-' + args.model + "-" + args.visible_device + '-epoch-' + str(epoch) + '.pth')
             
     
 
@@ -299,6 +300,6 @@ print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
 
 # save & load a best performing model
-checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
-torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
+checkpoint = torch.load(args.checkpoint_path + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+torch.save(checkpoint, args.checkpoint_path + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 #'''
