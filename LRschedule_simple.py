@@ -25,15 +25,13 @@ class MyLRScheduler(object):
             #Cyclic learning rate with warm restarts
             # max_lr (= min_lr * step_size) is decreased to min_lr using linear decay before
             # it is set to max value at the end of cycle.
-            if self.counter >= self.cycle_len:
-                self.counter = 0
             current_lr = round(self.max_lr - (epoch % self.cycle_len) * self.min_lr, 5)
-            self.counter += 1
+
         return current_lr
 
 
 if __name__ == '__main__':
-    lrSched_60 = MyLRScheduler(max_lr=0.5, cycle_len=5, warm_up_interval=1)
+    lrSched_60 = MyLRScheduler(max_lr=0.3, cycle_len=5, warm_up_interval=2)
     lrSched_120 = MyLRScheduler(max_lr=0.1, cycle_len=60, warm_up_interval=0)
     for i in range(0,60):
         print(i+1, lrSched_60.get_lr(i))
