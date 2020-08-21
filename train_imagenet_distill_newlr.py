@@ -38,8 +38,8 @@ if args.model not in dic_model:
     print("The model is currently not supported")
     sys.exit()
 
-trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=8)
-testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=8)
+trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=16)
+testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=16)
 
 #args.visible_device sets which cuda devices to be used"
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  
@@ -278,7 +278,8 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 
 lrSched_60 = MyLRScheduler(max_lr=0.5, cycle_len=5, warm_up_interval=1)
 lrSched_120 = MyLRScheduler(max_lr=0.1, cycle_len=60, warm_up_interval=0)
-lrSched_finetune = MyLRScheduler(max_lr=0.01, cycle_len=30, warm_up_interval=0)
+lrSched_finetune30 = MyLRScheduler(max_lr=0.05, cycle_len=5, warm_up_interval=0)
+lrSched_finetune60 = MyLRScheduler(max_lr=0.0125, cycle_len=30, warm_up_interval=0)
 
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
@@ -286,6 +287,7 @@ if args.pretrained != None:
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
+# in case of resuming
 if args.starting_epoch != 0:
     for i in range(0, args.starting_epoch):
         if i < 60:
@@ -293,7 +295,7 @@ if args.starting_epoch != 0:
         else:
             lrSched_120.get_lr(i)
    
-#'''
+'''
 for i in range(args.starting_epoch, 120):
     start = timeit.default_timer()
     
@@ -320,4 +322,39 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+'''
+
+#'''
+## finetuning high perf
+best_acc = 0
+best_acc_top5 = 0
+for i in range(args.starting_epoch, args.starting_epoch+30):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    if i < 150:
+        lr_log = lrSched_finetune30.get_lr(i)
+    else:
+        lr_log = lrSched_finetune60.get_lr(i)
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr_log
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    #test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+    print("LR for epoch {} = {:.5f}".format(i+1, lr_log))
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+#checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+#net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 #'''

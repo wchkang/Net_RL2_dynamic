@@ -31,9 +31,9 @@ class MyLRScheduler(object):
 
 
 if __name__ == '__main__':
-    lrSched_60 = MyLRScheduler(max_lr=0.3, cycle_len=5, warm_up_interval=2)
-    lrSched_120 = MyLRScheduler(max_lr=0.1, cycle_len=60, warm_up_interval=0)
-    for i in range(0,60):
+    lrSched_60 = MyLRScheduler(max_lr=0.05, cycle_len=4, warm_up_interval=1)
+    lrSched_120 = MyLRScheduler(max_lr=0.0125, cycle_len=20, warm_up_interval=0)
+    for i in range(0,20):
         print(i+1, lrSched_60.get_lr(i))
-    for i in range(60,120):
+    for i in range(20,40):
         print(i+1, lrSched_120.get_lr(i))

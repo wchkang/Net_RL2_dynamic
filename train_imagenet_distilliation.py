@@ -47,6 +47,18 @@ device='cuda'
 net = dic_model[args.model](num_classes=1000)
 net = net.to(device)
 
+# teacher from pytorch pretrained
+net_teacher = torchvision.models.mobilenet_v2(pretrained=True)  # from torchvision
+net_teacher = net_teacher.to(device)
+
+# teacher from home-trained
+#net_teacher = dic_model[args.model](num_classes=1000)
+#teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
+#checkpoint = torch.load(teacher_pretrained)
+#net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
+                    
+
+
 # parallelize 
 class MyDataParallel(nn.DataParallel):
     def __getattr__(self, name):
@@ -58,21 +70,11 @@ class MyDataParallel(nn.DataParallel):
 if torch.cuda.device_count() >= 1:
     print("Let's use", torch.cuda.device_count(), "GPUs!")
     # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
-    net = MyDataParallel(net)
+
+net = MyDataParallel(net)
+net_teacher = MyDataParallel(net_teacher)
 
 
-#load teacher network
-
-# teacher from pytorch pretrained
-net_teacher = torchvision.models.mobilenet_v2(pretrained=True)  # from torchvision
-net_teacher = net_teacher.to(device)
-
-# teacher from home-trained
-#net_teacher = dic_model[args.model](num_classes=1000)
-#teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
-#checkpoint = torch.load(teacher_pretrained)
-#net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
-                    
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
 
@@ -101,7 +103,7 @@ def train_alter(epoch):
             #outputs_teacher = net_teacher(inputs, skip=False)
             outputs_teacher = net_teacher(inputs)
 
-        alpha = 1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        alpha = 0.8 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
         T = 4
         # forward for the full model
         outputs_full = net(inputs, skip=False)
@@ -133,6 +135,7 @@ def train_alter(epoch):
         #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_full.clone().detach()/T, dim=1)) * T*T
         loss_skip_acc = criterion(outputs_skip, targets) 
         loss_skip = loss_skip_kd * alpha + loss_skip_acc * (1. - alpha)
+        #loss_skip = loss_skip_kd
 
         if (batch_idx == 0):
             print("kd acc loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss))
@@ -227,7 +230,7 @@ def test(epoch, skip=False, update_best=True):
 
     if update_best == True:
         if acc_top1 > best_acc:
-            print('Saving..')
+            print('Saving Best..')
             state = {
                 'net_state_dict': net.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -240,7 +243,7 @@ def test(epoch, skip=False, update_best=True):
             best_acc = acc_top1
             best_acc_top5 = acc_top5
             print("Best_Acc_top1/5 = %.3f\t%.3f" % (best_acc, best_acc_top5))
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             print('Saving..')
             state = {
                 'net_state_dict': net.state_dict(),
@@ -274,7 +277,7 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 #'''
 net.train()
@@ -302,15 +305,16 @@ torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.vis
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 #'''
 
-#'''
+'''
 ## finetuning low perf
 
 args.lr = 0.01
-#args.weight_decay = 5e-4
+#args.weight_decay = 1e-4
 
+print("finetunign...")
 best_acc = 0
 best_acc_top5 = 0
-for i in range(args.starting_epoch, 10):
+for i in range(args.starting_epoch, 15):
     net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -332,7 +336,7 @@ for i in range(args.starting_epoch, 10):
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
-for i in range(args.starting_epoch, 10):
+for i in range(args.starting_epoch, 15):
     net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -352,17 +356,19 @@ for i in range(args.starting_epoch, 10):
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
-#'''
 
-#'''
+
+
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+'''
 
-
+'''
+args.lr=0.01
 ## finetuning high perf
 best_acc = 0
 best_acc_top5 = 0
-for i in range(args.starting_epoch, 10):
+for i in range(args.starting_epoch, args.starting_epoch+30):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -383,7 +389,7 @@ for i in range(args.starting_epoch, 10):
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
-for i in range(args.starting_epoch, 10):
+for i in range(args.starting_epoch, args.staring_epoch+30):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -403,4 +409,4 @@ for i in range(args.starting_epoch, 10):
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
-#'''
+'''

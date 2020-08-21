@@ -136,7 +136,8 @@ class MobileNetV2_skip(nn.Module):
 
         # building classifier
         self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
+            #nn.Dropout(0.2),  # turn-off dropout for distillation
+            nn.Dropout(0.0),
             nn.Linear(self.last_channel, num_classes),
         )
 
@@ -254,9 +255,9 @@ class MobileNetV2_skip(nn.Module):
                 self.layers[i_base+1+j].train()
 
         # defreeze params of high-perf FC layer
-        #self.linear.weight.requires_grad = True
-        #self.linear.bias.requires_grad = True
-        #self.linear.train()
+        # for param in self.classifier.parameters():
+        #     param.requires_grad = True
+        # self.classifier.train()
 
 
 def test():

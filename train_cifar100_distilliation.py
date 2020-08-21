@@ -103,7 +103,6 @@ def train_alter(epoch):
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
-
         alpha = 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
         T = 4 #1 #4
         # forward/backward for the skipped model
