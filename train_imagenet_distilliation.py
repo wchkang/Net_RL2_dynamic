@@ -36,8 +36,8 @@ if args.model not in dic_model:
     print("The model is currently not supported")
     sys.exit()
 
-trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=8)
-testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=8)
+trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=16)
+testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=16)
 
 #args.visible_device sets which cuda devices to be used"
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  
@@ -103,8 +103,8 @@ def train_alter(epoch):
             #outputs_teacher = net_teacher(inputs, skip=False)
             outputs_teacher = net_teacher(inputs)
 
-        alpha = 0.8 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
-        T = 4
+        alpha = 0.7 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 20
         # forward for the full model
         outputs_full = net(inputs, skip=False)
         _, pred = outputs_full.topk(5, 1, largest=True, sorted=True)
@@ -118,8 +118,8 @@ def train_alter(epoch):
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
-        alpha = 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
-        T = 4 #1 #4
+        alpha = 0.9 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
+        T = 20 #1 #4
         # forward/backward for the skipped model
         outputs_skip = net(inputs,skip=True)
         _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
@@ -258,16 +258,15 @@ def test(epoch, skip=False, update_best=True):
 
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
-    if epoch > 30:
-        lr = lr * 0.1
-    if epoch > 60:
-        lr = lr * 0.1
     if epoch > 90:
+        lr = lr * 0.1
+    if epoch > 150:
+        lr = lr * 0.1
+    if epoch > 200:
         lr = lr * 0.1
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-
 
 best_acc = 0
 best_acc_top5 = 0
@@ -281,7 +280,7 @@ if args.pretrained != None:
     best_acc = checkpoint['acc']
 #'''
 net.train()
-for i in range(args.starting_epoch, 100):
+for i in range(args.starting_epoch, 200):
     start = timeit.default_timer()
     
     adjust_learning_rate(optimizer, i+1, args.lr)
@@ -368,7 +367,7 @@ args.lr=0.01
 ## finetuning high perf
 best_acc = 0
 best_acc_top5 = 0
-for i in range(args.starting_epoch, args.starting_epoch+30):
+for i in range(args.starting_epoch, args.starting_epoch+20):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -389,7 +388,8 @@ for i in range(args.starting_epoch, args.starting_epoch+30):
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
-for i in range(args.starting_epoch, args.staring_epoch+30):
+#args.lr=0.01
+for i in range(args.starting_epoch, args.starting_epoch+20):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
