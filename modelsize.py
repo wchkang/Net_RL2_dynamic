@@ -16,14 +16,16 @@ import numpy as np
 
 #from models.cifar100 import mobilenetv2_skip
 #from models.cifar10 import mobilenetv2_cifar10_skip
-from models.ilsvrc import mobilenetv2_skip
+#from models.ilsvrc import mobilenetv2_skip
+from models.cifar100 import resnet_skip
 
 from ptflops import get_model_complexity_info
 
 #model = mobilenetv2_skip.MobileNetV2_skip
 #model = mobilenetv2_skip.MobileNetV2
 #model = mobilenetv2_cifar10_skip.MobileNetV2_skip
-model = mobilenetv2_skip.MobileNetV2_skip
+#model = mobilenetv2_skip.MobileNetV2_skip
+model = resnet_skip.ResNet50_skip
 
 with torch.cuda.device(0):
   net = model(num_classes=1000)
@@ -43,4 +45,4 @@ with torch.cuda.device(0):
   for i in range(100):
       y = net(x)
   t_end = time.time()
-  print('time: {:.3f} seconds'.format(t_end - t_start))
+  print('time: {:.3f} seconds per inference'.format((t_end - t_start)/100.0))
