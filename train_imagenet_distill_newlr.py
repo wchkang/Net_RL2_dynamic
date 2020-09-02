@@ -106,8 +106,8 @@ def train_alter(epoch):
             #outputs_teacher = net_teacher(inputs, skip=False)
             outputs_teacher = net_teacher(inputs)
 
-        alpha = 1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
-        T = 4
+        alpha = 0.7 # 1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 20 #
         # forward for the full model
         outputs_full = net(inputs, skip=False)
         _, pred = outputs_full.topk(5, 1, largest=True, sorted=True)
@@ -121,8 +121,8 @@ def train_alter(epoch):
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
-        alpha = 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
-        T = 4 #1 #4
+        alpha = 0.9 #1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
+        T = 20 #4 #1 #4
         # forward/backward for the skipped model
         outputs_skip = net(inputs,skip=True)
         _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
@@ -279,12 +279,12 @@ optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weig
 lrSched_60 = MyLRScheduler(max_lr=0.5, cycle_len=5, warm_up_interval=1)
 lrSched_120 = MyLRScheduler(max_lr=0.1, cycle_len=60, warm_up_interval=0)
 lrSched_finetune30 = MyLRScheduler(max_lr=0.05, cycle_len=5, warm_up_interval=0)
-lrSched_finetune60 = MyLRScheduler(max_lr=0.0125, cycle_len=30, warm_up_interval=0)
+lrSched_finetune60 = MyLRScheduler(max_lr=0.0125, cycle_len=60, warm_up_interval=0)
 
 if args.pretrained != None:
     checkpoint = torch.load(args.pretrained)
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
 # in case of resuming
@@ -328,12 +328,12 @@ net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 ## finetuning high perf
 best_acc = 0
 best_acc_top5 = 0
-for i in range(args.starting_epoch, args.starting_epoch+30):
+for i in range(args.starting_epoch, 120+120):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    if i < 150:
+    if i < 180:
         lr_log = lrSched_finetune30.get_lr(i)
     else:
         lr_log = lrSched_finetune60.get_lr(i)
@@ -358,3 +358,52 @@ for i in range(args.starting_epoch, args.starting_epoch+30):
 #checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 #net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 #'''
+
+'''
+args.lr=0.01
+## finetuning high perf
+best_acc = 0
+best_acc_top5 = 0
+print('xxxx')
+for i in range(args.starting_epoch, args.starting_epoch+30):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, args.staring_epoch+30):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+'''

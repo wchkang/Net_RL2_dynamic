@@ -19,7 +19,7 @@ from random import randint
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-parser.add_argument('--weight_decay', default=4e-5, type=float, help='Weight decay')
+parser.add_argument('--weight_decay', default=1e-5, type=float, help='Weight decay')
 parser.add_argument('--batch_size', default=512, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
@@ -36,8 +36,8 @@ if args.model not in dic_model:
     print("The model is currently not supported")
     sys.exit()
 
-trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=8)
-testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=8)
+trainloader = utils.get_traindata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size,download=True, num_workers=16)
+testloader = utils.get_testdata('ILSVRC2012',args.dataset_path,batch_size=args.batch_size, num_workers=16)
 
 #args.visible_device sets which cuda devices to be used"
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"  
@@ -103,8 +103,8 @@ def train_alter(epoch):
             #outputs_teacher = net_teacher(inputs, skip=False)
             outputs_teacher = net_teacher(inputs)
 
-        alpha = 0.8 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
-        T = 4
+        alpha = 0.7 # 0.8 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 20# 4
         # forward for the full model
         outputs_full = net(inputs, skip=False)
         _, pred = outputs_full.topk(5, 1, largest=True, sorted=True)
@@ -119,7 +119,7 @@ def train_alter(epoch):
         loss.backward()
 
         alpha = 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
-        T = 4 #1 #4
+        T = 20 # 4 #1 #4
         # forward/backward for the skipped model
         outputs_skip = net(inputs,skip=True)
         _, pred = outputs_skip.topk(5, 1, largest=True, sorted=True)
@@ -368,6 +368,7 @@ args.lr=0.01
 ## finetuning high perf
 best_acc = 0
 best_acc_top5 = 0
+print('xxxx')
 for i in range(args.starting_epoch, args.starting_epoch+30):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
