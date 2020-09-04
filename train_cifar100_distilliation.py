@@ -60,11 +60,11 @@ net = net.to(device)
 
 
 #load teacher network for ResNet50
-#net_teacher = dic_model[args.model](num_classes=100)
-net_teacher = dic_model['ResNet101_skip'](num_classes=100)
+net_teacher = dic_model[args.model](num_classes=100)
+#net_teacher = dic_model['ResNet101_skip'](num_classes=100)
 net_teacher = net_teacher.to(device)
-#teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
-teacher_pretrained='./checkpoint/CIFAR100-ResNet101_skip-noskip-80.01H.pth'
+teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
+#teacher_pretrained='./checkpoint/CIFAR100-ResNet101_skip-noskip-80.01H.pth'
 checkpoint = torch.load(teacher_pretrained)
 net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
@@ -101,6 +101,11 @@ def train_alter(epoch):
             net_teacher.eval()
             outputs_teacher = net_teacher(inputs, skip=False)
 
+            # EXP top10
+            topK_teacher, topK_teacher_idx = outputs_teacher.topk(100,1, largest=True, sorted=True)
+
+            #print(top10_teacher)
+
         alpha = 0.9# 1.0 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
         T = 4
         # forward for the full model
@@ -112,8 +117,18 @@ def train_alter(epoch):
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
         loss_acc = criterion(outputs, targets) 
-        loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+        
+        # EXP: topK
+        outputs_topK = outputs.gather(1, topK_teacher_idx)
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
+        
+        #print("target sharep:", targets.shape)
+        #print("outputs sharep:", outputs.shape)
+        #print("outputs_top10 sharep:", outputs_top10.shape)
+        #print("top10_idx sharep:", top10_teacher_idx.shape, flush=True)
         loss.backward()
 
         alpha = 0.9#1.0 #0.0 #0.9 # 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
@@ -127,7 +142,12 @@ def train_alter(epoch):
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
         # learn from an external teacher
-        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_teacher.detach()/T, dim=1)) * T*T
+        #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_teacher.detach()/T, dim=1)) * T*T
+
+        # EXP topK
+        outputs_skip_topK = outputs_skip.gather(1, topK_teacher_idx)
+        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+
         #learn from an internal teacher
         #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.clone().detach()/T, dim=1)) * T*T
         loss_skip_acc = criterion(outputs_skip, targets) 
@@ -312,7 +332,7 @@ if args.pretrained != None:
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
     #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-'''
+#'''
 net.train()
 for i in range(args.starting_epoch, 300):
     start = timeit.default_timer()
@@ -337,7 +357,7 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
 torch.save(checkpoint, './checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-'''
+#'''
 
 
 #'''
@@ -444,3 +464,4 @@ for i in range(args.starting_epoch, 20):
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
 #'''
+
