@@ -19,7 +19,7 @@ from random import randint
 parser = argparse.ArgumentParser(description='Following arguments are used for the script')
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
-parser.add_argument('--weight_decay', default=1e-5, type=float, help='Weight decay')
+parser.add_argument('--weight_decay', default=1e-4, type=float, help='Weight decay')
 parser.add_argument('--batch_size', default=512, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
@@ -47,17 +47,21 @@ device='cuda'
 net = dic_model[args.model](num_classes=1000)
 net = net.to(device)
 
-# teacher from pytorch pretrained
-net_teacher = torchvision.models.mobilenet_v2(pretrained=True)  # from torchvision
-net_teacher = net_teacher.to(device)
 
 # teacher from home-trained
 #net_teacher = dic_model[args.model](num_classes=1000)
 #teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
 #checkpoint = torch.load(teacher_pretrained)
 #net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
-                    
 
+# teacher from pytorch pretrained
+if args.model == 'MobileNetV2_skip':
+    net_teacher = torchvision.models.mobilenet_v2(pretrained=True)  # from torchvision
+else:
+    print('The model has no pretrained model.')
+    sys.exit()
+
+net_teacher = net_teacher.to(device)
 
 # parallelize 
 class MyDataParallel(nn.DataParallel):
@@ -73,7 +77,6 @@ if torch.cuda.device_count() >= 1:
 
 net = MyDataParallel(net)
 net_teacher = MyDataParallel(net_teacher)
-
 
 #CrossEntropyLoss for accuracy loss criterion
 criterion = nn.CrossEntropyLoss()
@@ -103,9 +106,12 @@ def train_alter(epoch):
             #outputs_teacher = net_teacher(inputs, skip=False)
             outputs_teacher = net_teacher(inputs)
 
+            # EXP top10
+            topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
 
-        alpha = 0.7 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
-        T = 20
+
+        alpha = 0.9 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 4 # 20
 
         # forward for the full model
         outputs_full = net(inputs, skip=False)
@@ -116,12 +122,18 @@ def train_alter(epoch):
         correct_top1 += correct[:, :1].sum()        
         total += targets.size(0)
         loss_acc = criterion(outputs_full, targets) 
-        loss_kd = criterion_kd(F.log_softmax(outputs_full/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+        # original kd
+        #loss_kd = criterion_kd(F.log_softmax(outputs_full/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+
+        # EXP: topK
+        outputs_topK = outputs_full.gather(1, topK_teacher_idx)
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
         alpha = 0.9 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
-        T = 20 #1 #4
+        T = 4 # 20 #1 #4
 
         # forward/backward for the skipped model
         outputs_skip = net(inputs,skip=True)
@@ -133,7 +145,12 @@ def train_alter(epoch):
         total += targets.size(0)
         # learn either from an external teacher or an internal teacher 
         # external teacher
-        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_teacher.detach()/T, dim=1)) * T*T
+        #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_teacher.detach()/T, dim=1)) * T*T
+        
+        # EXP topK
+        outputs_skip_topK = outputs_skip.gather(1, topK_teacher_idx)
+        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+
         # internal teacher
         #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs_full.clone().detach()/T, dim=1)) * T*T
         loss_skip_acc = criterion(outputs_skip, targets) 
@@ -147,6 +164,65 @@ def train_alter(epoch):
             # print(loss_skip_acc.requires_grad)
             # print(loss_skip.requires_grad)
         loss_skip.backward()
+
+        # update parameters
+        optimizer.step()
+    
+    acc_top1 = 100.*correct_top1/total
+    acc_top5 = 100.*correct_top5/total
+    
+    print("Training_Acc_Top1/5 = %.3f\t%.3f" % (acc_top1, acc_top5))
+
+
+#Training for standard models
+def train_highperf_distill(epoch):    
+    print('\nCuda ' + args.visible_device + ' Epoch: %d' % epoch)
+    #net.train()
+    
+    correct_top1 = 0
+    correct_top5 = 0
+    total = 0
+    
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        optimizer.zero_grad()
+
+        with torch.no_grad():
+            net_teacher.eval()
+            #outputs_teacher = net_teacher(inputs, skip=False)
+            outputs_teacher = net_teacher(inputs)
+
+            # EXP top10
+            topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
+
+        alpha = 0.9 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        T = 4
+        # forward for the full model
+        outputs = net(inputs,False)
+        _, pred = outputs.topk(5, 1, largest=True, sorted=True)
+        label_e = targets.view(targets.size(0), -1).expand_as(pred)
+        correct = pred.eq(label_e).float()
+        correct_top5 += correct[:, :5].sum()
+        correct_top1 += correct[:, :1].sum()        
+        total += targets.size(0)
+        loss_acc = criterion(outputs, targets) 
+        #loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_teacher.clone().detach()/T, dim=1)) * T*T
+
+        # EXP: topK
+        outputs_topK = outputs.gather(1, topK_teacher_idx)
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+
+        loss = loss_kd * alpha + loss_acc * (1. - alpha)
+        loss.backward()
+
+        if (batch_idx == 0):
+            print("kd acc loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss))
+            #print("kd_skip acc_skip loss_skip: %.6f\t%.6f\t%.6f" % (loss_skip_kd, loss_skip_acc, loss_skip))
+            # print(loss_skip_kd.requires_grad)
+            # print(loss_skip_acc.requires_grad)
+            # print(loss_skip.requires_grad)
+        #loss_skip.backward()
 
         # update parameters
         optimizer.step()
@@ -259,14 +335,24 @@ def test(epoch, skip=False, update_best=True):
             torch.save(state, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-epoch-' + str(epoch) + '.pth')
    
 
+# def adjust_learning_rate(optimizer, epoch, args_lr):
+#     lr = args_lr
+#     if epoch > 90:
+#         lr = lr * 0.1
+#     if epoch > 150:
+#         lr = lr * 0.1
+#     if epoch > 200:
+#         lr = lr * 0.1
+
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
-    if epoch > 90:
+    if epoch > 30:
         lr = lr * 0.1
-    if epoch > 150:
+    if epoch > 60:
         lr = lr * 0.1
-    if epoch > 200:
+    if epoch > 120:
         lr = lr * 0.1
+
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -281,9 +367,9 @@ if args.pretrained != None:
     net.load_state_dict(checkpoint['net_state_dict'], strict=False)
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
-#'''
+'''
 net.train()
-for i in range(args.starting_epoch, 200):
+for i in range(args.starting_epoch, 90):
     start = timeit.default_timer()
     
     adjust_learning_rate(optimizer, i+1, args.lr)
@@ -305,15 +391,65 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+'''
+
+#'''
+args.lr=0.01
+## finetuning high perf
+best_acc = 0
+best_acc_top5 = 0
+
+for i in range(args.starting_epoch, 15):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train_highperf_distill(i+1)
+    #train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+for i in range(args.starting_epoch, 15):
+    net.freeze_lowperf()
+    #freeze_lowperf_model_all(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train_highperf_distill(i+1)
+    #train(i+1, skip=False)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=False)
+    test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
 #'''
 
-'''
+#'''
+checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
 ## finetuning low perf
 
-args.lr = 0.01
+#args.lr = 0.01
 #args.weight_decay = 1e-4
 
-print("finetunign...")
 best_acc = 0
 best_acc_top5 = 0
 for i in range(args.starting_epoch, 15):
@@ -335,9 +471,6 @@ for i in range(args.starting_epoch, 15):
         
     print('Time: {:.3f}'.format(stop - start))
 
-checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-
 for i in range(args.starting_epoch, 15):
     net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
@@ -358,63 +491,3 @@ for i in range(args.starting_epoch, 15):
 
 print("Best_Acc_top1 = %.3f" % best_acc)
 print("Best_Acc_top5 = %.3f" % best_acc_top5)
-
-
-
-checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-'''
-
-'''
-args.lr=0.01
-## finetuning high perf
-best_acc = 0
-best_acc_top5 = 0
-<<<<<<< HEAD
-print('xxxx')
-for i in range(args.starting_epoch, args.starting_epoch+30):
-=======
-for i in range(args.starting_epoch, args.starting_epoch+20):
->>>>>>> 0285ad488d45ecd093f50379441593cee63d6a3b
-    net.freeze_lowperf()
-    #freeze_lowperf_model_all(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    start = timeit.default_timer()
-
-    train(i+1, skip=False)
-
-    stop = timeit.default_timer()
-    
-    test(i+1, skip=True, update_best=False)
-    test(i+1, skip=False, update_best=True)
-
-    net.defreeze_model()
-        
-    print('Time: {:.3f}'.format(stop - start))
-
-checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
-net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-
-#args.lr=0.01
-for i in range(args.starting_epoch, args.starting_epoch+20):
-    net.freeze_lowperf()
-    #freeze_lowperf_model_all(net)
-    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
-
-    start = timeit.default_timer()
-
-    train(i+1, skip=False)
-
-    stop = timeit.default_timer()
-    
-    test(i+1, skip=True, update_best=False)
-    test(i+1, skip=False, update_best=True)
-
-    net.defreeze_model()
-        
-    print('Time: {:.3f}'.format(stop - start))
-
-print("Best_Acc_top1 = %.3f" % best_acc)
-print("Best_Acc_top5 = %.3f" % best_acc_top5)
-'''
