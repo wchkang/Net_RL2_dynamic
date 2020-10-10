@@ -52,21 +52,21 @@ net = dic_model[args.model](num_classes=100)
 net = net.to(device)
 
 #load teacher network for MobileNetV2
-# net_teacher = dic_model[args.model](num_classes=100)
-# net_teacher = net_teacher.to(device)
-# teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
-# checkpoint = torch.load(teacher_pretrained)
-# net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
+net_teacher = dic_model[args.model](num_classes=100)
+net_teacher = net_teacher.to(device)
+teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
+checkpoint = torch.load(teacher_pretrained)
+net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
 
 #load teacher network for ResNet50
-net_teacher = dic_model[args.model](num_classes=100)
-#net_teacher = dic_model['ResNet101_skip'](num_classes=100)
-net_teacher = net_teacher.to(device)
-teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
+#net_teacher = dic_model[args.model](num_classes=100)
+##net_teacher = dic_model['ResNet101_skip'](num_classes=100)
+#net_teacher = net_teacher.to(device)
+#teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
 #teacher_pretrained='./checkpoint/CIFAR100-ResNet101_skip-noskip-80.01H.pth'
-checkpoint = torch.load(teacher_pretrained)
-net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
+#checkpoint = torch.load(teacher_pretrained)
+#net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
 
 #CrossEntropyLoss for accuracy loss criterion
@@ -121,7 +121,8 @@ def train_alter(epoch):
         
         # EXP: topK
         outputs_topK = outputs.gather(1, topK_teacher_idx)
-        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         
@@ -146,7 +147,8 @@ def train_alter(epoch):
 
         # EXP topK
         outputs_skip_topK = outputs_skip.gather(1, topK_teacher_idx)
-        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip_topK/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         #learn from an internal teacher
         #loss_skip_kd = criterion_kd(F.log_softmax(outputs_skip/T, dim=1), F.softmax(outputs.clone().detach()/T, dim=1)) * T*T

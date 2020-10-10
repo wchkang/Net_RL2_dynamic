@@ -187,10 +187,10 @@ class MobileNetV2_skip(nn.Module):
 
 
 def test():
-    net = MobileNetV2_skip(num_classes=1000)
-    x = torch.randn(256,3,32,32)
+    net = MobileNetV2_skip(num_classes=100)
+    x = torch.randn(1,3,32,32)
     y = net(x)
     print(y.size())
-    #print(net)
+    print(net)
 
-#test()
+test()

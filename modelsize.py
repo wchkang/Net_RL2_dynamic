@@ -21,6 +21,11 @@ from models.cifar100 import resnet_skip
 
 from ptflops import get_model_complexity_info
 
+#args.visible_device sets which cuda devices to be used"
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
+device='cuda'
+
 #model = mobilenetv2_skip.MobileNetV2_skip
 #model = mobilenetv2_skip.MobileNetV2
 #model = mobilenetv2_cifar10_skip.MobileNetV2_skip
