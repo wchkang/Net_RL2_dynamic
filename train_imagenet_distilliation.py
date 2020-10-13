@@ -198,7 +198,7 @@ def train_highperf_distill(epoch):
             # EXP topK
             topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
 
-        alpha = 0.7 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        alpha = 1.0 #0.9 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
         T = 3
         # forward for the full model
         outputs = net(inputs,False)
@@ -213,7 +213,8 @@ def train_highperf_distill(epoch):
 
         # EXP: topK
         outputs_topK = outputs.gather(1, topK_teacher_idx)
-        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        #loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
@@ -418,7 +419,7 @@ rate_scheduler = adjust_learning_rate
 
 if 'MobileNetV2_skip' == args.model:
     rate_scheduler = adjust_learning_rate_mobilenetv2
-    total_epochs = 150
+    total_epochs = 120
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
@@ -428,7 +429,7 @@ if args.pretrained != None:
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
-#'''
+'''
 net.train()
 for i in range(args.starting_epoch, total_epochs):
     start = timeit.default_timer()
@@ -452,7 +453,7 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-#'''
+'''
 
 #'''
 args.lr=0.01
@@ -467,7 +468,8 @@ for i in range(0, 15):
 
     start = timeit.default_timer()
 
-    train_highperf_distill(i+1)
+    #train_highperf_distill(i+1)
+    train_finetune(i+1)
     #train(i+1, skip=False)
 
     stop = timeit.default_timer()
@@ -486,7 +488,8 @@ for i in range(0, 15):
 
     start = timeit.default_timer()
 
-    train_highperf_distill(i+1)
+    #train_highperf_distill(i+1)
+    train_finetune(i+1)
     #train(i+1, skip=False)
 
     stop = timeit.default_timer()

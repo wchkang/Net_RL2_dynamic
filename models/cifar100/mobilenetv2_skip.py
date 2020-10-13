@@ -146,7 +146,7 @@ class MobileNetV2_skip(nn.Module):
     def defreeze_model(self):
         """ Defreeze all parameters and enable training. . """
         # defreeze all parameters
-        for param in net.parameters():
+        for param in self.parameters():
             param.requires_grad = True
         # make the whole network trainable
         self.train()
