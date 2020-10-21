@@ -111,7 +111,7 @@ def train_alter(epoch):
             topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
 
 
-        alpha = 1.0 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        alpha = 1.0 #0.7  #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
         T = 3 # 20
 
         # forward for the full model
@@ -134,7 +134,7 @@ def train_alter(epoch):
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
 
-        alpha = 1.0 #0.7 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
+        alpha = 1.0 #1.0 #0.7 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
         T = 3 # 20 #1 #4
 
         # forward/backward for the skipped model
@@ -198,7 +198,7 @@ def train_highperf_distill(epoch):
             # EXP topK
             topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
 
-        alpha = 1.0 #0.9 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
+        alpha = 0.9 #1.0 #0.9 #0.0 #0.9 #1.0 #0.9# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
         T = 3
         # forward for the full model
         outputs = net(inputs,False)
@@ -400,12 +400,11 @@ def adjust_learning_rate(optimizer, epoch, args_lr):
 
 def adjust_learning_rate_mobilenetv2(optimizer, epoch, args_lr):
     lr = args_lr
-    if epoch > 60:
+    if epoch > 120: #60:
         lr = lr * 0.1
-    if epoch > 90:
+    if epoch > 150: #90:
         lr = lr * 0.1
-    if epoch > 120:
-        lr = lr * 0.1
+
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
@@ -419,7 +418,7 @@ rate_scheduler = adjust_learning_rate
 
 if 'MobileNetV2_skip' == args.model:
     rate_scheduler = adjust_learning_rate_mobilenetv2
-    total_epochs = 120
+    total_epochs = 180
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
@@ -429,7 +428,7 @@ if args.pretrained != None:
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
-'''
+#'''
 net.train()
 for i in range(args.starting_epoch, total_epochs):
     start = timeit.default_timer()
@@ -453,7 +452,7 @@ print("Best_Acc_top5 = %.3f" % best_acc_top5)
 checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
 torch.save(checkpoint, './checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '-nofinetuned'+'.pth')
 net.load_state_dict(checkpoint['net_state_dict'], strict=False)
-'''
+#'''
 
 #'''
 args.lr=0.01
@@ -461,7 +460,7 @@ args.lr=0.01
 best_acc = 0
 best_acc_top5 = 0
 
-for i in range(0, 15):
+for i in range(0, 20):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -481,7 +480,7 @@ for i in range(0, 15):
         
     print('Time: {:.3f}'.format(stop - start))
 
-for i in range(0, 15):
+for i in range(0, 10):
     net.freeze_lowperf()
     #freeze_lowperf_model_all(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -516,7 +515,7 @@ net.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
 best_acc = 0
 best_acc_top5 = 0
-for i in range(0, 15):
+for i in range(0, 20):
     net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -535,7 +534,7 @@ for i in range(0, 15):
         
     print('Time: {:.3f}'.format(stop - start))
 
-for i in range(0, 15):
+for i in range(0, 10):
     net.freeze_highperf()
     #freeze_all_but_lowperf_fc(net)
     optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
