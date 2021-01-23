@@ -462,10 +462,10 @@ def adjust_learning_rate_mobilenetv2(optimizer, epoch, args_lr):
         lr = lr * 0.1
     if epoch > 300: #90:
         lr = lr * 0.1
-
-
+    
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
 
 best_acc = 0
 best_acc_top5 = 0
