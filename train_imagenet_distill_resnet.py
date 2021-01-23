@@ -20,17 +20,18 @@ parser = argparse.ArgumentParser(description='Following arguments are used for t
 parser.add_argument('--lr', default=0.1, type=float, help='Learning Rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='Momentum')
 parser.add_argument('--weight_decay', default=1e-5, type=float, help='Weight decay')
-parser.add_argument('--batch_size', default=256, type=int, help='Batch_size')
+parser.add_argument('--batch_size', default=128, type=int, help='Batch_size')
 parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES')
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
 parser.add_argument('--dataset_path', default="/mnt/sda2/ILSVRC2012/", help='A path to dataset directory')
-parser.add_argument('--model', default="ResNet50_skip", help='ResNet50_skip')
+parser.add_argument('--model', default="ResNet34_skip", help='ResNet34_skip, ResNet50_skip')
 args = parser.parse_args()
 
 from models.ilsvrc import resnet_skip_imagenet
 #from models.cifar100 import mobilenetv2_skip
-dic_model = {'ResNet50_skip': resnet_skip_imagenet.ResNet50_skip}
+#dic_model = {'ResNet50_skip': resnet_skip_imagenet.ResNet50_skip}
+dic_model = {'ResNet34_skip': resnet_skip_imagenet.ResNet34_skip}
     
 if args.model not in dic_model:
     print("The model is currently not supported")
@@ -48,7 +49,9 @@ net = dic_model[args.model](num_classes=1000)
 net = net.to(device)
 
 # teacher from pytorch pretrained
-net_teacher = torchvision.models.resnet101(pretrained=True)  # from torchvision
+#net_teacher = torchvision.models.resnet101(pretrained=True)  # from torchvision
+#net_teacher = torchvision.models.resnet50(pretrained=True)  # from torchvision
+net_teacher = torchvision.models.resnet34(pretrained=True)  # from torchvision
 net_teacher = net_teacher.to(device)
 net_teacher.eval()
 
@@ -105,6 +108,9 @@ def train_alter(epoch):
 
             # EXP top10
             topK_teacher, topK_teacher_idx = outputs_teacher.topk(500,1, largest=True, sorted=True)
+        
+            topK_teacher.detach()
+            topK_teacher_idx.detach()
 
 
         alpha = 0.9 #1.0# 0.7 # 0.1 #0.5 # 1.0 #0.1 #1.0 #1.0
@@ -124,10 +130,15 @@ def train_alter(epoch):
 
         # EXP: topK
         outputs_topK = outputs_full.gather(1, topK_teacher_idx)
-        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher.detach()/T, dim=1)) * T*T
+        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         loss.backward()
+
+        # TODO: experimet to reduce memory during training...
+        # update parameters
+        #optimizer.step()
+        #optimizer.zero_grad()
 
         alpha = 0.9 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
         T = 4 #1 #4
