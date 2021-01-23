@@ -223,8 +223,8 @@ def train_distill(epoch, skip=False):
         # original kd
         #loss_kd = criterion_kd(F.log_softmax(outputs/T, dim=1), F.softmax(outputs_teacher/T, dim=1)) * T*T
         # EXP: topK
-        #outputs_topK = outputs.gather(1, topK_teacher_idx)
-        loss_kd = criterion_kd(F.log_softmax(outputs_topK/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
+        topK_student = outputs.gather(1, topK_teacher_idx)
+        loss_kd = criterion_kd(F.log_softmax(topK_student/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
         #loss = loss_acc
@@ -234,8 +234,8 @@ def train_distill(epoch, skip=False):
         T = 4 # 20 #1 #4
 
         if (batch_idx == 0):
-            print("kd_loss acc_loss loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss_skip),flush=True)
-        loss_skip.backward()
+            print("kd_loss acc_loss loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss),flush=True)
+        loss.backward()
 
         # update parameters
         optimizer.step()
