@@ -189,7 +189,7 @@ class MobileNetV2_skip(nn.Module):
         self.skip_distance = idx_skip_distance
         return nn.Sequential(*layers)
 
-    def forward(self, x, skip=True):
+    def forward(self, x, skip=False):
         out = self.conv1(x)
         #print(out.shape)
         if skip==True:
@@ -267,4 +267,4 @@ def test():
     print(y.size())
     #print(net)
 
-#test()
+test()
