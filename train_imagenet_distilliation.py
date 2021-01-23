@@ -227,14 +227,10 @@ def train_distill(epoch, skip=False):
         loss_kd = criterion_kd(F.log_softmax(topK_student/T, dim=1), F.softmax(topK_teacher/T, dim=1)) * T*T
 
         loss = loss_kd * alpha + loss_acc * (1. - alpha)
-        #loss = loss_acc
-        loss.backward()
-       
-        alpha = 0.9 #1.0 #0.7 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
-        T = 4 # 20 #1 #4
 
         if (batch_idx == 0):
             print("kd_loss acc_loss loss: %.6f\t%.6f\t%.6f" % (loss_kd, loss_acc, loss),flush=True)
+
         loss.backward()
 
         # update parameters
