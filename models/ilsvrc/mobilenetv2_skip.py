@@ -89,10 +89,10 @@ class MobileNetV2_skip(nn.Module):
                         layers.append(Block(in_planes, out_planes, expansion, stride, skippable=True))
                         idx_basic_layers.append(idx)
                         idx_skip_layers.append(idx)
-                        #idx_skip_distance.append(num_blocks//2)
-                        idx_skip_distance.append(round(num_blocks/2))
-                    #elif sid > 0 and sid <= round(num_blocks//2):
-                    elif sid > 0 and sid <= round(num_blocks/2):
+                        idx_skip_distance.append(num_blocks//2)
+                        #idx_skip_distance.append(round(num_blocks/2))
+                    elif sid > 0 and sid <= num_blocks//2:
+                    #elif sid > 0 and sid <= round(num_blocks/2):
                         layers.append(Block(in_planes, out_planes, expansion, stride))
                     else:
                         layers.append(Block(in_planes, out_planes, expansion, stride))
