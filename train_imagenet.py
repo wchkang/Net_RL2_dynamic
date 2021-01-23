@@ -251,8 +251,28 @@ def adjust_learning_rate(optimizer, epoch, args_lr):
         param_group['lr'] = lr
 
 
+def adjust_learning_rate_mobilenetv2(optimizer, epoch, args_lr):
+    lr = args_lr
+    if epoch > 150: #60:
+        lr = lr * 0.1
+    if epoch > 225: #90:
+        lr = lr * 0.1
+    if epoch > 300: #90:
+        lr = lr * 0.1
+
+
 best_acc = 0
 best_acc_top5 = 0
+
+
+func_train = train
+total_epochs = 90
+rate_scheduler = adjust_learning_rate
+
+if 'MobileNetV2_skip' == args.model:
+    rate_scheduler = adjust_learning_rate_mobilenetv2
+    total_epochs = 300
+    
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     
@@ -262,13 +282,13 @@ if args.pretrained != None:
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 #'''
-for i in range(args.starting_epoch, 100):
+for i in range(args.starting_epoch, total_epochs):
     start = timeit.default_timer()
     
-    adjust_learning_rate(optimizer, i+1, args.lr)
+    rate_scheduler(optimizer, i+1, args.lr)
     
     #train(i+1)
-    train(i+1,skip=False)
+    train(i+1,skip=True)
     #train(i+1,skip=True)
     #train_alter(i+1)
     
@@ -276,7 +296,7 @@ for i in range(args.starting_epoch, 100):
     
     #test(i+1)
     #test(i+1, skip=True)
-    test(i+1, skip=False)
+    test(i+1, skip=True)
         
     print('Time: {:.3f}'.format(stop - start))
 
