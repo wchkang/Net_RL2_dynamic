@@ -27,12 +27,13 @@ parser.add_argument('--visible_device', default="0", help='CUDA_VISIBLE_DEVICES'
 parser.add_argument('--pretrained', default=None, help='Path of a pretrained model file')
 parser.add_argument('--starting_epoch', default=0, type=int, help='An epoch which model training starts')
 parser.add_argument('--dataset_path', default="./data/", help='A path to dataset directory')
-parser.add_argument('--model', default="MobileNetV2_skip", help='MobileNetV2_skip, ResNet50_skip, ResNet101_skip')
+parser.add_argument('--model', default="ResNet34_skip", help='MobileNetV2_skip, ResNet34_skip, ResNet50_skip, ResNet101_skip')
 args = parser.parse_args()
 
 from models.cifar100 import mobilenetv2_skip
 from models.cifar100 import resnet_skip
 dic_model = {'MobileNetV2_skip': mobilenetv2_skip.MobileNetV2_skip, \
+    'ResNet34_skip': resnet_skip.ResNet34_skip,\
     'ResNet50_skip': resnet_skip.ResNet50_skip,\
     'ResNet101_skip': resnet_skip.ResNet101_skip}
     
@@ -52,21 +53,22 @@ net = dic_model[args.model](num_classes=100)
 net = net.to(device)
 
 #load teacher network for MobileNetV2
-net_teacher = dic_model[args.model](num_classes=100)
-net_teacher = net_teacher.to(device)
-teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
-checkpoint = torch.load(teacher_pretrained)
-net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
+# net_teacher = dic_model[args.model](num_classes=100)
+# net_teacher = net_teacher.to(device)
+# teacher_pretrained='./checkpoint/CIFAR100-MobileNetV2_skip-75.35H-noskip.pth'
+# checkpoint = torch.load(teacher_pretrained)
+# net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
 
 #load teacher network for ResNet50
-#net_teacher = dic_model[args.model](num_classes=100)
-##net_teacher = dic_model['ResNet101_skip'](num_classes=100)
-#net_teacher = net_teacher.to(device)
-#teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
+net_teacher = dic_model[args.model](num_classes=100)
+#net_teacher = dic_model['ResNet101_skip'](num_classes=100)
+net_teacher = dic_model['ResNet50_skip'](num_classes=100)
+net_teacher = net_teacher.to(device)
+teacher_pretrained='./checkpoint/CIFAR100-ResNet50_skip-noskip-79.55H.pth'
 #teacher_pretrained='./checkpoint/CIFAR100-ResNet101_skip-noskip-80.01H.pth'
-#checkpoint = torch.load(teacher_pretrained)
-#net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
+checkpoint = torch.load(teacher_pretrained)
+net_teacher.load_state_dict(checkpoint['net_state_dict'], strict=False)
 
 
 #CrossEntropyLoss for accuracy loss criterion
@@ -131,6 +133,11 @@ def train_alter(epoch):
         #print("outputs_top10 sharep:", outputs_top10.shape)
         #print("top10_idx sharep:", top10_teacher_idx.shape, flush=True)
         loss.backward()
+
+        # TODO: experimet to reduce memory during training...
+        # update parameters
+        optimizer.step()
+        optimizer.zero_grad()
 
         alpha = 0.9#1.0 #0.0 #0.9 # 1.0 # 0.9 #1.0 # 0.1 # 1.0 #1.0 # 0.9
         T = 4 #1 #4
