@@ -489,7 +489,7 @@ if args.pretrained != None:
     #optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     best_acc = checkpoint['acc']
 
-
+'''
 net.train()
 for i in range(args.starting_epoch, total_epochs):
     start = timeit.default_timer()
@@ -521,6 +521,7 @@ args.lr=0.01
 best_acc = 0
 best_acc_top5 = 0
 
+net.train()
 #for i in range(0, 30):
 for i in range(0, 40):
     net.freeze_lowperf()
@@ -535,7 +536,7 @@ for i in range(0, 40):
 
     stop = timeit.default_timer()
     
-    #test(i+1, skip=True, update_best=False)
+    test(i+1, skip=True, update_best=False)
     test(i+1, skip=False, update_best=True)
 
     net.defreeze_model()
@@ -577,6 +578,62 @@ for i in range(0, 30):
     
     #test(i+1, skip=True, update_best=False)
     test(i+1, skip=False, update_best=True)
+
+    net.defreeze_model()
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+print("Best_Acc_top1 = %.3f" % best_acc)
+print("Best_Acc_top5 = %.3f" % best_acc_top5)
+#'''
+
+'''
+# save & load a best performing model
+checkpoint = torch.load('./checkpoint/' + 'ILSVRC-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+
+## finetuning low perf
+
+args.lr = 0.01
+
+best_acc = 0
+best_acc_top5 = 0
+for i in range(args.starting_epoch, 30):
+    net.freeze_highperf()
+    #freeze_all_but_lowperf_fc(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=True)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
+
+    net.defreeze_model()
+    #defreeze_model(net)
+        
+    print('Time: {:.3f}'.format(stop - start))
+
+checkpoint = torch.load('./checkpoint/' + 'CIFAR100-' + args.model + "-" + args.visible_device + '.pth')
+net.load_state_dict(checkpoint['net_state_dict'], strict=False)
+
+for i in range(args.starting_epoch, 20):
+    net.freeze_highperf()
+    #freeze_all_but_lowperf_fc(net)
+    optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr*0.1, momentum=args.momentum, weight_decay=args.weight_decay)
+
+    start = timeit.default_timer()
+
+    train(i+1, skip=True)
+
+    stop = timeit.default_timer()
+    
+    test(i+1, skip=True, update_best=True)
+    test(i+1, skip=False, update_best=False)
 
     net.defreeze_model()
         
