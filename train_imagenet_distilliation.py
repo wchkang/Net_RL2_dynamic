@@ -443,7 +443,6 @@ def test(epoch, skip=False, update_best=True):
 
 def adjust_learning_rate(optimizer, epoch, args_lr):
     lr = args_lr
-
     if epoch > 30:
         lr = lr * 0.1
     if epoch > 60:
@@ -453,6 +452,7 @@ def adjust_learning_rate(optimizer, epoch, args_lr):
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+
 
 def adjust_learning_rate_mobilenetv2(optimizer, epoch, args_lr):
     lr = args_lr
@@ -475,8 +475,8 @@ total_epochs = 90
 rate_scheduler = adjust_learning_rate
 
 if 'MobileNetV2_skip' == args.model:
-    #rate_scheduler = adjust_learning_rate_mobilenetv2
-    rate_scheduler = adjust_learning_rate
+    rate_scheduler = adjust_learning_rate_mobilenetv2
+    #rate_scheduler = adjust_learning_rate
     #total_epochs = 120 
     total_epochs = 300
     #total_epochs = 330
